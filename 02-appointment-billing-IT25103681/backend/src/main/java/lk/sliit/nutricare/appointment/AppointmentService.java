@@ -119,6 +119,37 @@ public class AppointmentService {
         .ifPresent(invoice -> invoice.setStatus("CANCELLED"));
   }
 
+  public java.util.List<Appointment> getAllAppointments() {
+    return appointments.findAll();
+  }
+
+  @Transactional
+  public Appointment reschedule(UUID appointmentId, UUID newSlotId) {
+    Appointment appointment = requireAppointment(appointmentId);
+    if ("CANCELLED".equals(appointment.getStatus()) || "EXPIRED".equals(appointment.getStatus())) {
+      throw new IllegalStateException("Cannot reschedule cancelled or expired appointment");
+    }
+
+    AvailabilitySlot oldSlot = slots.findForUpdate(appointment.getSlotId()).orElseThrow();
+    AvailabilitySlot newSlot = slots.findForUpdate(newSlotId).orElseThrow(() -> new IllegalArgumentException("New slot not found"));
+
+    if (!newSlot.canHold()) {
+      throw new IllegalStateException("New slot is not available");
+    }
+
+    oldSlot.release();
+
+    if ("CONFIRMED".equals(appointment.getStatus())) {
+      newSlot.hold(); // we have to hold before book
+      newSlot.book();
+    } else {
+      newSlot.hold();
+    }
+
+    appointment.reschedule(newSlot);
+    return appointment;
+  }
+
   @Scheduled(fixedDelay = 60000)
   @Transactional
   public void releaseExpired() {
@@ -136,6 +167,19 @@ public class AppointmentService {
     return appointments
         .findById(appointmentId)
         .orElseThrow(() -> new IllegalArgumentException("Appointment not found"));
+  }
+
+  public Invoice requireInvoice(UUID invoiceId) {
+    return invoices
+        .findById(invoiceId)
+        .orElseThrow(() -> new IllegalArgumentException("Invoice not found"));
+  }
+
+  @Transactional
+  public Invoice updateInvoice(UUID invoiceId, String status) {
+    Invoice invoice = requireInvoice(invoiceId);
+    invoice.setStatus(status);
+    return invoice;
   }
 
 

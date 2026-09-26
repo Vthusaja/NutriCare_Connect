@@ -50,4 +50,15 @@ public class Complaint {
   public Instant getCreatedAt() {
     return createdAt;
   }
+
+  public void update(String status, String priority) {
+    if (status == null || status.isBlank()) {
+      throw new IllegalArgumentException("status is required");
+    }
+    if (priority == null || priority.isBlank()) {
+      throw new IllegalArgumentException("priority is required");
+    }
+    this.status = status.trim();
+    this.priority = priority.trim();
+  }
 }

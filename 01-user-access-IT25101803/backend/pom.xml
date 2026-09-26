@@ -1,1 +1,13 @@
-<project xmlns="http://maven.apache.org/POM/4.0.0"><modelVersion>4.0.0</modelVersion><parent><groupId>lk.sliit.nutricare</groupId><artifactId>nutricare-parent</artifactId><version>1.0.0</version><relativePath>../../pom.xml</relativePath></parent><artifactId>user-access</artifactId></project>
+<project xmlns="http://maven.apache.org/POM/4.0.0"><modelVersion>4.0.0</modelVersion><parent><groupId>lk.sliit.nutricare</groupId><artifactId>nutricare-parent</artifactId><version>1.0.0</version><relativePath>../../pom.xml</relativePath></parent><artifactId>user-access</artifactId>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <argLine>-Dnet.bytebuddy.experimental=true</argLine>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

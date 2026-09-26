@@ -78,4 +78,9 @@ public class Appointment {
   public void expire() {
     status = "EXPIRED";
   }
+
+  public void reschedule(AvailabilitySlot newSlot) {
+    this.slotId = newSlot.getId();
+    this.practitionerId = newSlot.getPractitionerId();
+  }
 }

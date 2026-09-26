@@ -100,4 +100,32 @@ public class HealthCheck {
   public Instant getRecordedAt() {
     return recordedAt;
   }
+
+  public void setWeightKg(BigDecimal weightKg) {
+    this.weightKg = weightKg;
+  }
+
+  public void setBmi(BigDecimal bmi) {
+    this.bmi = bmi;
+  }
+
+  public void setSystolic(Integer systolic) {
+    this.systolic = systolic;
+  }
+
+  public void setDiastolic(Integer diastolic) {
+    this.diastolic = diastolic;
+  }
+
+  public void setBloodSugar(BigDecimal bloodSugar) {
+    this.bloodSugar = bloodSugar;
+  }
+
+  public void setTemperature(BigDecimal temperature) {
+    this.temperature = temperature;
+  }
+
+  public void setNotes(String notes) {
+    this.notes = notes;
+  }
 }

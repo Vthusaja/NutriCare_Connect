@@ -109,6 +109,41 @@ public class AppointmentController {
     service.cancel(id);
   }
 
+  @DeleteMapping("/appointments/{id}")
+  @PreAuthorize(
+      "hasAnyRole('PATIENT','RECEPTION_STAFF','DOCTOR','DIETITIAN','SYSTEM_ADMIN','MEDICAL_CENTER_COORDINATOR')")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  void deleteAppointment(Authentication authentication, @PathVariable UUID id) {
+    requireCancelAccess(authentication, id);
+    service.cancel(id);
+  }
+
+  @GetMapping("/appointments/{id}")
+  @PreAuthorize(
+      "hasAnyRole('PATIENT','RECEPTION_STAFF','DOCTOR','DIETITIAN','SYSTEM_ADMIN','MEDICAL_CENTER_COORDINATOR')")
+  Appointment getAppointment(Authentication authentication, @PathVariable UUID id) {
+    requireCancelAccess(authentication, id);
+    return service.requireAppointment(id);
+  }
+
+  @GetMapping("/appointments")
+  @PreAuthorize(
+      "hasAnyRole('RECEPTION_STAFF','SYSTEM_ADMIN','MEDICAL_CENTER_COORDINATOR')")
+  List<Appointment> getAllAppointments() {
+    return service.getAllAppointments();
+  }
+
+  @PutMapping("/appointments/{id}")
+  @PreAuthorize(
+      "hasAnyRole('PATIENT','RECEPTION_STAFF','DOCTOR','DIETITIAN','SYSTEM_ADMIN','MEDICAL_CENTER_COORDINATOR')")
+  Appointment reschedule(
+      Authentication authentication,
+      @PathVariable UUID id,
+      @Valid @RequestBody RescheduleRequest request) {
+    requireCancelAccess(authentication, id);
+    return service.reschedule(id, request.newSlotId());
+  }
+
   @GetMapping("/appointments/patient/{patientId}")
   @PreAuthorize(
       "hasRole('RECEPTION_STAFF') or (hasRole('PATIENT') and principal == #patientId.toString())")
@@ -179,4 +214,7 @@ public class AppointmentController {
       @NotNull @DecimalMin("0.00") BigDecimal amount,
       @NotBlank String method,
       @NotBlank String status) {}
+
+  record RescheduleRequest(
+      @NotNull UUID newSlotId) {}
 }

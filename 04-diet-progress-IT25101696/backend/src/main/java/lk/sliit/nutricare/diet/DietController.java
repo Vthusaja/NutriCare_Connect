@@ -16,10 +16,13 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.security.access.prepost.PostAuthorize;
 
 @RestController
 @RequestMapping("/api/v1")
@@ -61,6 +64,32 @@ public class DietController {
       "hasAnyRole('DIETITIAN','DOCTOR') or (hasRole('PATIENT') and principal == #id.toString())")
   List<DietPlan> plans(@PathVariable String id) {
     return plans.findByPatientIdOrderByCreatedAtDesc(id);
+  }
+
+  @GetMapping("/diet-plans/{id}")
+  @PostAuthorize("hasAnyRole('DIETITIAN','DOCTOR') or (hasRole('PATIENT') and returnObject.patientId == principal)")
+  DietPlan getPlan(@PathVariable UUID id) {
+    return plans.findById(id).orElseThrow();
+  }
+
+  @PutMapping("/diet-plans/{id}")
+  @PreAuthorize("hasAnyRole('DIETITIAN','DOCTOR')")
+  DietPlan update(Principal principal, @PathVariable UUID id, @Valid @RequestBody PlanRequest request) {
+    DietPlan plan = plans.findById(id).orElseThrow();
+    if (!plan.getDietitianId().equals(principal.getName()))
+      throw new IllegalArgumentException("Only the plan author can update it");
+    plan.update(request.title(), request.calorieTarget(), request.exclusions(), request.mealSchedule());
+    return plans.save(plan);
+  }
+
+  @DeleteMapping("/diet-plans/{id}")
+  @PreAuthorize("hasAnyRole('DIETITIAN','DOCTOR')")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  void delete(Principal principal, @PathVariable UUID id) {
+    DietPlan plan = plans.findById(id).orElseThrow();
+    if (!plan.getDietitianId().equals(principal.getName()))
+      throw new IllegalArgumentException("Only the plan author can delete it");
+    plans.delete(plan);
   }
 
   @PostMapping("/progress-logs")

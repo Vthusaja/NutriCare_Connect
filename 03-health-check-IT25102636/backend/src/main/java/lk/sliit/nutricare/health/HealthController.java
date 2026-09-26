@@ -13,6 +13,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -79,6 +81,50 @@ public class HealthController {
   @PreAuthorize("hasAnyRole('DIETITIAN','DOCTOR','MEDICAL_CENTER_COORDINATOR')")
   List<HealthAlert> alerts() {
     return alerts.findByStatusOrderByCreatedAtDesc("OPEN");
+  }
+
+  @GetMapping("/checkups/{id}")
+  @PreAuthorize("hasAnyRole('DIETITIAN','DOCTOR','MEDICAL_CENTER_COORDINATOR')")
+  public HealthCheck getCheckup(@PathVariable java.util.UUID id) {
+    return checks
+        .findById(id)
+        .orElseThrow(
+            () -> new org.springframework.web.server.ResponseStatusException(HttpStatus.NOT_FOUND));
+  }
+
+  @PutMapping("/checkups/{id}")
+  @PreAuthorize("hasAnyRole('DOCTOR','MEDICAL_CENTER_COORDINATOR')")
+  @Transactional
+  public HealthCheck updateCheckup(
+      @PathVariable java.util.UUID id, @Valid @RequestBody CheckRequest request) {
+    HealthCheck check =
+        checks
+            .findById(id)
+            .orElseThrow(
+                () -> new org.springframework.web.server.ResponseStatusException(HttpStatus.NOT_FOUND));
+    
+    check.setWeightKg(request.weightKg());
+    check.setBmi(request.bmi());
+    check.setSystolic(request.systolic());
+    check.setDiastolic(request.diastolic());
+    check.setBloodSugar(request.bloodSugar());
+    check.setTemperature(request.temperature());
+    check.setNotes(request.notes());
+
+    return checks.save(check);
+  }
+
+  @DeleteMapping("/checkups/{id}")
+  @PreAuthorize("hasAnyRole('DOCTOR','MEDICAL_CENTER_COORDINATOR')")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  @Transactional
+  public void deleteCheckup(@PathVariable java.util.UUID id) {
+    HealthCheck check =
+        checks
+            .findById(id)
+            .orElseThrow(
+                () -> new org.springframework.web.server.ResponseStatusException(HttpStatus.NOT_FOUND));
+    checks.delete(check);
   }
 
   record CheckRequest(

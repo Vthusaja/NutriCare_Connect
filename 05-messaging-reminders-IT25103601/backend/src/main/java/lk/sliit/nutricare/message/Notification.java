@@ -83,6 +83,10 @@ public class Notification {
     return createdAt;
   }
 
+  public void markAsRead() {
+    this.status = "READ";
+  }
+
   public void retry() {
     attempts++;
     status = "DELIVERED_SIMULATED";

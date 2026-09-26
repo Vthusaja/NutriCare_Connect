@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -78,6 +79,30 @@ public class MessageController {
     notifications
         .findByStatusAndRetryAtBefore("FAILED", Instant.now())
         .forEach(Notification::retry);
+  }
+
+  @PutMapping("/notifications/{id}/read")
+  @PreAuthorize("isAuthenticated()")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  public void readNotification(@PathVariable java.util.UUID id) {
+    notifications.findById(id).ifPresent(notification -> {
+      notification.markAsRead();
+      notifications.save(notification);
+    });
+  }
+
+  @org.springframework.web.bind.annotation.DeleteMapping("/messages/{id}")
+  @PreAuthorize("isAuthenticated()")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  public void deleteMessage(@PathVariable java.util.UUID id) {
+    messages.deleteById(id);
+  }
+
+  @org.springframework.web.bind.annotation.DeleteMapping("/notifications/{id}")
+  @PreAuthorize("isAuthenticated()")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  public void deleteNotification(@PathVariable java.util.UUID id) {
+    notifications.deleteById(id);
   }
 
   record MessageRequest(

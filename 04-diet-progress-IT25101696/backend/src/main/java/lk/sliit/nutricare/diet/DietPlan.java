@@ -89,4 +89,11 @@ public class DietPlan {
   public void publish() {
     status = "PUBLISHED";
   }
+
+  public void update(String title, Integer calorieTarget, String exclusions, String mealSchedule) {
+    this.title = title;
+    this.calorieTarget = calorieTarget;
+    this.exclusions = exclusions;
+    this.mealSchedule = mealSchedule;
+  }
 }

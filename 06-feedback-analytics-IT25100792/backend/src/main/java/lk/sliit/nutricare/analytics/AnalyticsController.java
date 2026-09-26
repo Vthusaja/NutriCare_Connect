@@ -104,6 +104,24 @@ public class AnalyticsController {
     return complaints.findAll();
   }
 
+  @GetMapping("/feedback/{id}")
+  @PreAuthorize("hasAnyRole('SYSTEM_ADMIN','OPERATIONS_MANAGER','PATIENT_RELATIONS_OFFICER','PATIENT')")
+  Feedback getFeedback(@PathVariable UUID id, Authentication authentication) {
+    if (authentication.getAuthorities().stream().anyMatch(a -> a.getAuthority().equals("ROLE_PATIENT"))) {
+        return ownedFeedback(id, authentication.getName());
+    }
+    return feedback.findById(id).orElseThrow();
+  }
+
+  @PutMapping("/complaints/{id}")
+  @PreAuthorize("hasAnyRole('SYSTEM_ADMIN','OPERATIONS_MANAGER','PATIENT_RELATIONS_OFFICER')")
+  @Transactional
+  Complaint updateComplaint(@PathVariable UUID id, @Valid @RequestBody ComplaintUpdateRequest request) {
+    Complaint c = complaints.findById(id).orElseThrow();
+    c.update(request.status(), request.priority());
+    return complaints.save(c);
+  }
+
   @GetMapping("/reports/summary")
   @PreAuthorize("hasAnyRole('SYSTEM_ADMIN','OPERATIONS_MANAGER','FINANCE_EXECUTIVE')")
   Map<String, Object> summary(@RequestParam LocalDate from, @RequestParam LocalDate to) {
@@ -160,6 +178,8 @@ public class AnalyticsController {
 
   record FeedbackUpdateRequest(
       @Min(1) @Max(5) int rating, @Size(max = 1500) String comments) {}
+
+  record ComplaintUpdateRequest(@NotBlank String status, @NotBlank String priority) {}
 
   record Result(Feedback feedback, Complaint complaint) {}
 }
