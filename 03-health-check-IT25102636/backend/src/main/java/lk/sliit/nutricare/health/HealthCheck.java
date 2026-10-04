@@ -100,4 +100,21 @@ public class HealthCheck {
   public Instant getRecordedAt() {
     return recordedAt;
   }
+
+  public void updateDetails(
+      BigDecimal weightKg,
+      BigDecimal bmi,
+      Integer systolic,
+      Integer diastolic,
+      BigDecimal bloodSugar,
+      BigDecimal temperature,
+      String notes) {
+    if (weightKg != null) this.weightKg = weightKg;
+    if (bmi != null) this.bmi = bmi;
+    this.systolic = systolic;
+    this.diastolic = diastolic;
+    if (bloodSugar != null) this.bloodSugar = bloodSugar;
+    if (temperature != null) this.temperature = temperature;
+    if (notes != null) this.notes = notes;
+  }
 }

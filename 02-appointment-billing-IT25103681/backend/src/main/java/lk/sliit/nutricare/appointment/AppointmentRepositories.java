@@ -44,6 +44,13 @@ interface AppointmentRepository extends JpaRepository<Appointment, UUID> {
 
 interface InvoiceRepository extends JpaRepository<Invoice, UUID> {
   Optional<Invoice> findByAppointmentId(UUID appointmentId);
+
+  void deleteByAppointmentId(UUID appointmentId);
 }
 
-interface PaymentRepository extends JpaRepository<Payment, UUID> {}
+interface PaymentRepository extends JpaRepository<Payment, UUID> {
+  List<Payment> findByInvoiceId(UUID invoiceId);
+
+  void deleteByInvoiceId(UUID invoiceId);
+}
+

@@ -11,9 +11,11 @@ import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -48,6 +50,55 @@ public class MessageController {
           + " or (hasRole('PATIENT') and principal == #id.toString())")
   List<SecureMessage> conversation(@PathVariable String id) {
     return messages.findByPatientIdOrderBySentAtAsc(id);
+  }
+
+  @PutMapping("/messages/{id}")
+  @PreAuthorize(
+      "hasAnyRole('DIETITIAN','DOCTOR','RECEPTION_STAFF','PATIENT_RELATIONS_OFFICER','SYSTEM_ADMIN','PATIENT')")
+  SecureMessage update(
+      org.springframework.security.core.Authentication authentication,
+      @PathVariable java.util.UUID id,
+      @Valid @RequestBody UpdateMessageRequest request) {
+    SecureMessage message =
+        messages
+            .findById(id)
+            .orElseThrow(() -> new IllegalArgumentException("Message not found"));
+    requireMessageManageAccess(authentication, message);
+    if (Instant.now().isAfter(message.getSentAt().plus(10, java.time.temporal.ChronoUnit.MINUTES))) {
+      throw new IllegalArgumentException(
+          "Messages can only be edited within 10 minutes of sending");
+    }
+    message.setBody(request.body());
+    return messages.save(message);
+  }
+
+  @DeleteMapping("/messages/{id}")
+  @PreAuthorize(
+      "hasAnyRole('DIETITIAN','DOCTOR','RECEPTION_STAFF','PATIENT_RELATIONS_OFFICER','SYSTEM_ADMIN','PATIENT')")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  void delete(
+      org.springframework.security.core.Authentication authentication,
+      @PathVariable java.util.UUID id) {
+    SecureMessage message =
+        messages
+            .findById(id)
+            .orElseThrow(() -> new IllegalArgumentException("Message not found"));
+    requireMessageManageAccess(authentication, message);
+    if (Instant.now().isAfter(message.getSentAt().plus(10, java.time.temporal.ChronoUnit.MINUTES))) {
+      throw new IllegalArgumentException(
+          "Messages can only be deleted within 10 minutes of sending");
+    }
+    messages.delete(message);
+  }
+
+  private void requireMessageManageAccess(
+      org.springframework.security.core.Authentication authentication, SecureMessage message) {
+    String role =
+        authentication.getAuthorities().iterator().next().getAuthority().replace("ROLE_", "");
+    if (!"SYSTEM_ADMIN".equals(role) && !authentication.getName().equals(message.getSenderId())) {
+      throw new org.springframework.security.access.AccessDeniedException(
+          "You can only edit or delete your own messages");
+    }
   }
 
   @PostMapping("/notifications")
@@ -85,6 +136,8 @@ public class MessageController {
       @NotNull String recipientId,
       @NotNull String patientId,
       @NotBlank @Size(max = 2000) String body) {}
+
+  record UpdateMessageRequest(@NotBlank @Size(max = 2000) String body) {}
 
   record NoticeRequest(
       @NotNull String recipientId,

@@ -61,4 +61,8 @@ public class SecureMessage {
   public Instant getSentAt() {
     return sentAt;
   }
+
+  public void setBody(String body) {
+    this.body = body;
+  }
 }

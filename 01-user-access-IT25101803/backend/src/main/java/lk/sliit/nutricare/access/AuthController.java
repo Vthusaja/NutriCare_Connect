@@ -123,6 +123,13 @@ public class AuthController {
     return UserView.of(auth.setAccountStatus(currentUserId(principal), id, request.enabled()));
   }
 
+  @org.springframework.web.bind.annotation.DeleteMapping("/users/{id}")
+  @PreAuthorize("hasRole('SYSTEM_ADMIN')")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  public void deleteUser(Principal principal, @PathVariable String id) {
+    auth.deleteUser(currentUserId(principal), id);
+  }
+
   @PatchMapping("/users/{id}/role")
   @PreAuthorize("hasRole('SYSTEM_ADMIN')")
   public UserView role(

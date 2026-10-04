@@ -25,7 +25,7 @@ function dateLabel(value: string) {
 }
 
 export function AppointmentBillingFeature({
-  role, currentUserId, userName, loadAppointments, loadSlots, loadPeople, createBooking, createSlot, updateSlot, deleteSlot, cancelAppointment, payAppointment,
+  role, currentUserId, userName, loadAppointments, loadSlots, loadPeople, createBooking, createSlot, updateSlot, deleteSlot, cancelAppointment, updateAppointment, payAppointment,
 }: {
   role: string; currentUserId: string; userName: string;
   loadAppointments: () => Promise<Appointment[]>;
@@ -36,6 +36,7 @@ export function AppointmentBillingFeature({
   updateSlot: (id: string, details: { startTime: string; durationMinutes: number }) => Promise<unknown>;
   deleteSlot: (id: string) => Promise<void>;
   cancelAppointment: (id: string) => Promise<void>;
+  updateAppointment?: (id: string, details: { serviceType?: string; status?: string; amount?: number }) => Promise<unknown>;
   payAppointment: (id: string, details: { amount: number; method: string; status: string }) => Promise<unknown>;
 }) {
   const canBook = role === "PATIENT" || role === "RECEPTION_STAFF" || role === "SYSTEM_ADMIN" || role === "MEDICAL_CENTER_COORDINATOR";
@@ -150,13 +151,34 @@ export function AppointmentBillingFeature({
     }
   }
 
+  const [editingAppointment, setEditingAppointment] = useState<Appointment | null>(null);
+
   async function cancel(id: string) {
+    if (!window.confirm("Are you sure you want to cancel and delete this appointment?")) return;
     try {
       await cancelAppointment(id);
-      setNotice("Appointment cancelled and the slot was released.");
+      setNotice("Appointment deleted and the slot was released.");
       await refresh();
     } catch (reason) {
       setNotice(reason instanceof Error ? reason.message : "The appointment could not be cancelled.");
+    }
+  }
+
+  async function updateAppt(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editingAppointment || !updateAppointment) return;
+    const form = new FormData(event.currentTarget);
+    try {
+      await updateAppointment(editingAppointment.id, {
+        serviceType: String(form.get("serviceType")),
+        status: String(form.get("status")),
+        amount: Number(form.get("amount")),
+      });
+      setNotice("Appointment updated successfully.");
+      setEditingAppointment(null);
+      await refresh();
+    } catch (reason) {
+      setNotice(reason instanceof Error ? reason.message : "The appointment could not be updated.");
     }
   }
 
@@ -293,7 +315,10 @@ export function AppointmentBillingFeature({
                     {canPay && appointment.status === "HELD" && appointment.invoiceStatus !== "PAID" && (
                       <button className="primary" type="button" onClick={() => void pay(appointment)}>Pay & confirm</button>
                     )}
-                    {canCancel && (appointment.status === "HELD" || appointment.status === "CONFIRMED") && (
+                    {canCancel && (
+                      <button className="text-button" type="button" onClick={() => setEditingAppointment(appointment)}>Edit</button>
+                    )}
+                    {canCancel && (
                       <button className="danger" type="button" onClick={() => void cancel(appointment.id)}>Cancel</button>
                     )}
                   </span>
@@ -309,6 +334,40 @@ export function AppointmentBillingFeature({
               </div>
             )}
           </div>
+
+          {editingAppointment && (
+            <div style={{ marginTop: 20, padding: 16, border: "1px solid #c9ded3", borderRadius: 12, background: "#f5faf7" }}>
+              <div className="panel-title" style={{ marginBottom: 12 }}>
+                <div>
+                  <span className="eyebrow">Editing Appointment</span>
+                  <h3>{editingAppointment.patientName} Â· {editingAppointment.practitionerName}</h3>
+                </div>
+              </div>
+              <form className="form-grid" onSubmit={updateAppt}>
+                <div className="field full">
+                  <label htmlFor="edit-serviceType">Service Type</label>
+                  <input id="edit-serviceType" name="serviceType" defaultValue={editingAppointment.serviceType} required />
+                </div>
+                <div className="field">
+                  <label htmlFor="edit-status">Status</label>
+                  <select id="edit-status" name="status" defaultValue={editingAppointment.status} required>
+                    <option value="HELD">HELD</option>
+                    <option value="CONFIRMED">CONFIRMED</option>
+                    <option value="COMPLETED">COMPLETED</option>
+                    <option value="CANCELLED">CANCELLED</option>
+                  </select>
+                </div>
+                <div className="field">
+                  <label htmlFor="edit-amount">Invoice Amount (LKR)</label>
+                  <input id="edit-amount" name="amount" type="number" min="0" defaultValue={editingAppointment.amount ?? 0} required />
+                </div>
+                <div className="field full" style={{ display: "flex", gap: 8 }}>
+                  <button className="primary" type="submit">Save Changes</button>
+                  <button className="secondary" type="button" onClick={() => setEditingAppointment(null)}>Cancel</button>
+                </div>
+              </form>
+            </div>
+          )}
         </section>
 
         <div className="stack-xl">

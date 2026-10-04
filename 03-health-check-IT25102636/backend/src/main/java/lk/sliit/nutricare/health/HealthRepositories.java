@@ -9,4 +9,7 @@ interface HealthCheckRepository extends JpaRepository<HealthCheck, UUID> {
 
 interface HealthAlertRepository extends JpaRepository<HealthAlert, UUID> {
   List<HealthAlert> findByStatusOrderByCreatedAtDesc(String status);
+
+  void deleteByHealthCheckId(UUID healthCheckId);
 }
+

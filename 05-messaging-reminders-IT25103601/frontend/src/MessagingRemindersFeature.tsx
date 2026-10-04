@@ -27,6 +27,8 @@ export function MessagingRemindersFeature({
   loadPeople,
   loadMessages,
   sendMessage,
+  updateMessage,
+  deleteMessage,
   loadNotices,
   createNotice,
 }: {
@@ -36,6 +38,8 @@ export function MessagingRemindersFeature({
   loadPeople: () => Promise<Person[]>;
   loadMessages: (patientId: string) => Promise<SecureMessage[]>;
   sendMessage: (details: { senderId: string; recipientId: string; patientId: string; body: string }) => Promise<SecureMessage>;
+  updateMessage?: (id: string, body: string) => Promise<SecureMessage>;
+  deleteMessage?: (id: string) => Promise<void>;
   loadNotices: (recipientId: string) => Promise<DeliveryNotice[]>;
   createNotice: (details: {
     recipientId: string;
@@ -161,6 +165,33 @@ export function MessagingRemindersFeature({
     return nameById[userId] ?? userId;
   }
 
+  const [editingMsgId, setEditingMsgId] = useState("");
+  const [editingMsgBody, setEditingMsgBody] = useState("");
+
+  async function handleEditMessage(id: string) {
+    if (!editingMsgBody.trim() || !updateMessage) return;
+    try {
+      await updateMessage(id, editingMsgBody.trim());
+      setNotice("Message updated.");
+      setEditingMsgId("");
+      await refresh();
+    } catch (reason) {
+      setNotice(reason instanceof Error ? reason.message : "The message could not be updated.");
+    }
+  }
+
+  async function handleDeleteMsg(id: string) {
+    if (!deleteMessage) return;
+    if (!window.confirm("Are you sure you want to delete this message?")) return;
+    try {
+      await deleteMessage(id);
+      setNotice("Message deleted.");
+      await refresh();
+    } catch (reason) {
+      setNotice(reason instanceof Error ? reason.message : "The message could not be deleted.");
+    }
+  }
+
   const conversation = (
     <section className="panel">
       <div className="panel-title">
@@ -217,18 +248,56 @@ export function MessagingRemindersFeature({
         {messages.map((item) => {
           const mine = item.senderId === currentUserId;
           const from = labelFor(item.senderId);
+          const ageMs = Date.now() - new Date(item.sentAt).getTime();
+          const canEditOrDelete = mine && ageMs <= 10 * 60 * 1000;
+          const minutesLeft = Math.max(1, Math.ceil((10 * 60 * 1000 - ageMs) / 60000));
+          const isEditing = editingMsgId === item.id;
+
           return (
             <div
               className="list-item"
               key={item.id}
-              style={{ marginLeft: mine ? "14%" : 0, background: mine ? "#e8f3ed" : "white" }}
+              style={{ marginLeft: mine ? "14%" : 0, background: mine ? "#e8f3ed" : "white", flexDirection: "column", alignItems: "stretch" }}
             >
-              <span className="avatar">{from[0]}</span>
-              <span className="grow">
-                <strong>{from}</strong>
-                <p>{item.body}</p>
-                <small>{new Date(item.sentAt).toLocaleString()} · Delivered</small>
-              </span>
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                <span className="avatar">{from[0]}</span>
+                <span className="grow">
+                  <strong>{from}</strong>
+                  {isEditing ? (
+                    <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+                      <input
+                        value={editingMsgBody}
+                        onChange={(e) => setEditingMsgBody(e.target.value)}
+                        style={{ flex: 1, border: "1px solid #2b795d", borderRadius: 6, padding: "6px 10px" }}
+                        autoFocus
+                      />
+                      <button className="primary" type="button" onClick={() => void handleEditMessage(item.id)}>Save</button>
+                      <button className="secondary" type="button" onClick={() => setEditingMsgId("")}>Cancel</button>
+                    </div>
+                  ) : (
+                    <p style={{ margin: "4px 0" }}>{item.body}</p>
+                  )}
+                  <small style={{ color: "#687e74" }}>
+                    {new Date(item.sentAt).toLocaleString()} · Delivered
+                    {canEditOrDelete && ` (${minutesLeft}m edit window left)`}
+                  </small>
+                </span>
+                {canEditOrDelete && !isEditing && (
+                  <span style={{ display: "flex", gap: 6 }}>
+                    <button
+                      className="text-button"
+                      type="button"
+                      onClick={() => {
+                        setEditingMsgId(item.id);
+                        setEditingMsgBody(item.body);
+                      }}
+                    >
+                      Edit
+                    </button>
+                    <button className="danger" type="button" onClick={() => void handleDeleteMsg(item.id)}>Delete</button>
+                  </span>
+                )}
+              </div>
             </div>
           );
         })}

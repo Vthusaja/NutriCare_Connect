@@ -21,16 +21,19 @@ public class AppointmentService {
   private final AppointmentRepository appointments;
   private final InvoiceRepository invoices;
   private final PaymentRepository payments;
+  private final org.springframework.jdbc.core.JdbcTemplate jdbc;
 
   AppointmentService(
       SlotRepository slots,
       AppointmentRepository appointments,
       InvoiceRepository invoices,
-      PaymentRepository payments) {
+      PaymentRepository payments,
+      org.springframework.jdbc.core.JdbcTemplate jdbc) {
     this.slots = slots;
     this.appointments = appointments;
     this.invoices = invoices;
     this.payments = payments;
+    this.jdbc = jdbc;
   }
 
   @Transactional
@@ -104,19 +107,53 @@ public class AppointmentService {
   }
 
   @Transactional
-  public void cancel(UUID appointmentId) {
-    Appointment appointment = appointments.findById(appointmentId).orElseThrow();
-    if ("CANCELLED".equals(appointment.getStatus())) {
-      return;
+  public Appointment updateAppointment(
+      UUID appointmentId, String serviceType, String status, BigDecimal amount) {
+    Appointment appointment = requireAppointment(appointmentId);
+    if (serviceType != null && !serviceType.isBlank()) {
+      appointment.setServiceType(serviceType);
     }
-    if ("EXPIRED".equals(appointment.getStatus())) {
-      throw new IllegalStateException("Expired appointments cannot be cancelled");
+    if (status != null && !status.isBlank()) {
+      appointment.setStatus(status);
+      if ("CONFIRMED".equals(status)) {
+        slots.findForUpdate(appointment.getSlotId()).ifPresent(AvailabilitySlot::book);
+      } else if ("CANCELLED".equals(status)) {
+        slots.findForUpdate(appointment.getSlotId()).ifPresent(AvailabilitySlot::release);
+      }
     }
-    appointment.cancel();
+    if (amount != null) {
+      invoices.findByAppointmentId(appointmentId).ifPresent(inv -> {
+        inv.setAmount(amount);
+        invoices.save(inv);
+      });
+    }
+    return appointments.save(appointment);
+  }
+
+  @Transactional
+  public void deleteAppointment(UUID appointmentId) {
+    Appointment appointment = requireAppointment(appointmentId);
+    // Release the slot
     slots.findForUpdate(appointment.getSlotId()).ifPresent(AvailabilitySlot::release);
-    invoices
-        .findByAppointmentId(appointmentId)
-        .ifPresent(invoice -> invoice.setStatus("CANCELLED"));
+
+    // Clean up complaints and feedback referencing this appointment
+    jdbc.update(
+        "DELETE FROM complaints WHERE feedback_id IN (SELECT id FROM feedback WHERE appointment_id = ?)",
+        appointmentId.toString());
+    jdbc.update("DELETE FROM feedback WHERE appointment_id = ?", appointmentId.toString());
+
+    // Clean up payments and invoices
+    invoices.findByAppointmentId(appointmentId).ifPresent(inv -> {
+      payments.deleteByInvoiceId(inv.getId());
+      invoices.delete(inv);
+    });
+
+    appointments.delete(appointment);
+  }
+
+  @Transactional
+  public void cancel(UUID appointmentId) {
+    deleteAppointment(appointmentId);
   }
 
   @Scheduled(fixedDelay = 60000)

@@ -89,4 +89,13 @@ public class DietPlan {
   public void publish() {
     status = "PUBLISHED";
   }
+
+  public void updateDetails(
+      String title, Integer calories, String exclusions, String schedule, String status) {
+    if (title != null && !title.isBlank()) this.title = title;
+    if (calories != null) this.calorieTarget = calories;
+    if (exclusions != null) this.exclusions = exclusions;
+    if (schedule != null && !schedule.isBlank()) this.mealSchedule = schedule;
+    if (status != null && !status.isBlank()) this.status = status;
+  }
 }

@@ -78,4 +78,21 @@ public class Appointment {
   public void expire() {
     status = "EXPIRED";
   }
+
+  public void updateDetails(String serviceType, String status) {
+    if (serviceType != null && !serviceType.isBlank()) {
+      this.serviceType = serviceType;
+    }
+    if (status != null && !status.isBlank()) {
+      this.status = status;
+    }
+  }
+
+  public void setStatus(String status) {
+    this.status = status;
+  }
+
+  public void setServiceType(String serviceType) {
+    this.serviceType = serviceType;
+  }
 }

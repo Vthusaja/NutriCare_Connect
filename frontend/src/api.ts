@@ -238,6 +238,10 @@ export function setUserEnabled(session: Session, id: string, enabled: boolean): 
   return authenticated(session, `/users/${id}/status`, { method: "PATCH", body: JSON.stringify({ enabled }) });
 }
 
+export function deleteUser(session: Session, id: string): Promise<void> {
+  return authenticated(session, `/users/${id}`, { method: "DELETE" });
+}
+
 export function fetchWorkspacePeople(session: Session): Promise<WorkspacePerson[]> {
   return authenticated(session, "/workspace/people");
 }
@@ -265,8 +269,16 @@ export async function deleteAvailabilitySlot(session: Session, id: string): Prom
   await authenticated(session, `/workspace/slots/${id}`, { method: "DELETE" });
 }
 
+export function updateAppointment(session: Session, id: string, details: { serviceType?: string; status?: string; amount?: number }): Promise<unknown> {
+  return authenticated(session, `/appointments/${id}`, { method: "PUT", body: JSON.stringify(details) });
+}
+
 export async function cancelAppointment(session: Session, id: string): Promise<void> {
-  await authenticated(session, `/appointments/${id}/cancel`, { method: "POST" });
+  await authenticated(session, `/appointments/${id}`, { method: "DELETE" });
+}
+
+export async function deleteAppointment(session: Session, id: string): Promise<void> {
+  await authenticated(session, `/appointments/${id}`, { method: "DELETE" });
 }
 
 export function payAppointment(session: Session, id: string, details: { amount: number; method: string; status: string }) {
@@ -276,6 +288,14 @@ export function payAppointment(session: Session, id: string, details: { amount: 
 
 export function createDietPlan(session: Session, plan: { patientId: string; title: string; calorieTarget: number; exclusions?: string; mealSchedule: string }): Promise<DietPlan> {
   return authenticated(session, "/diet-plans", { method: "POST", body: JSON.stringify(plan) });
+}
+
+export function updateDietPlan(session: Session, id: string, plan: { title: string; calorieTarget: number; exclusions?: string; mealSchedule: string; status?: string }): Promise<DietPlan> {
+  return authenticated(session, `/diet-plans/${id}`, { method: "PUT", body: JSON.stringify(plan) });
+}
+
+export function deleteDietPlan(session: Session, id: string): Promise<void> {
+  return authenticated(session, `/diet-plans/${id}`, { method: "DELETE" });
 }
 
 export function fetchDietPlans(session: Session, patientId: string): Promise<DietPlan[]> {
@@ -298,6 +318,20 @@ export function createHealthCheck(session: Session, check: {
     method: "POST",
     body: JSON.stringify(check),
   });
+}
+
+export function updateHealthCheck(session: Session, id: string, check: {
+  weightKg: number; bmi: number; systolic?: number; diastolic?: number;
+  bloodSugar: number; temperature: number; notes?: string;
+}): Promise<HealthCheckResult> {
+  return authenticated(session, `/checkups/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(check),
+  });
+}
+
+export function deleteHealthCheck(session: Session, id: string): Promise<void> {
+  return authenticated(session, `/checkups/${id}`, { method: "DELETE" });
 }
 
 /* Ã¢â€â‚¬Ã¢â€â‚¬ Profile Ã¢â€â‚¬Ã¢â€â‚¬ */
@@ -351,6 +385,14 @@ export function sendSecureMessage(session: Session, details: {
   return authenticated(session, "/messages", { method: "POST", body: JSON.stringify(details) });
 }
 
+export function updateMessage(session: Session, id: string, body: string): Promise<SecureMessage> {
+  return authenticated(session, `/messages/${id}`, { method: "PUT", body: JSON.stringify({ body }) });
+}
+
+export function deleteMessage(session: Session, id: string): Promise<void> {
+  return authenticated(session, `/messages/${id}`, { method: "DELETE" });
+}
+
 export function fetchDeliveryNotices(session: Session, recipientId: string): Promise<DeliveryNotice[]> {
   return authenticated(session, `/notifications/recipient/${recipientId}`);
 }
@@ -359,6 +401,34 @@ export function createDeliveryNotice(session: Session, details: {
   recipientId: string; type: string; channel: "IN_APP" | "EMAIL" | "SMS"; message: string; simulateFailure?: boolean;
 }): Promise<DeliveryNotice> {
   return authenticated(session, "/notifications", { method: "POST", body: JSON.stringify(details) });
+}
+
+export type WorkspaceInvoice = {
+  id: string;
+  invoiceNumber: string;
+  appointmentId: string;
+  patientId: string;
+  patientName: string;
+  serviceType: string;
+  amount: number;
+  status: string;
+  createdAt: string;
+};
+
+export function fetchInvoices(session: Session): Promise<WorkspaceInvoice[]> {
+  return authenticated(session, "/workspace/invoices");
+}
+
+export function createInvoice(session: Session, details: { appointmentId: string; amount: number; status?: string }): Promise<WorkspaceInvoice> {
+  return authenticated(session, "/workspace/invoices", { method: "POST", body: JSON.stringify(details) });
+}
+
+export function updateInvoice(session: Session, id: string, details: { amount: number; status: string }): Promise<WorkspaceInvoice> {
+  return authenticated(session, `/workspace/invoices/${id}`, { method: "PUT", body: JSON.stringify(details) });
+}
+
+export function deleteInvoice(session: Session, id: string): Promise<void> {
+  return authenticated(session, `/workspace/invoices/${id}`, { method: "DELETE" });
 }
 
 export type FeedbackEntry = {

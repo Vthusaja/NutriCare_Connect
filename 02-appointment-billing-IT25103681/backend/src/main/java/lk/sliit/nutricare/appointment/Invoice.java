@@ -56,6 +56,14 @@ public class Invoice {
     return status;
   }
 
+  public void setAmount(BigDecimal amount) {
+    this.amount = amount;
+  }
+
+  public Instant getCreatedAt() {
+    return createdAt;
+  }
+
   public void setStatus(String status) {
     this.status = status;
   }

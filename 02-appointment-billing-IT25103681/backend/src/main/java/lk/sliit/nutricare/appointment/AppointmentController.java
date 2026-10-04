@@ -101,9 +101,30 @@ public class AppointmentController {
     return service.pay(id, request.amount(), request.method(), request.status());
   }
 
+  @PutMapping("/appointments/{id}")
+  @PreAuthorize(
+      "hasAnyRole('PATIENT','RECEPTION_STAFF','DOCTOR','DIETITIAN','SYSTEM_ADMIN','MEDICAL_CENTER_COORDINATOR')")
+  Appointment updateAppointment(
+      Authentication authentication,
+      @PathVariable UUID id,
+      @RequestBody UpdateAppointmentRequest request) {
+    requireCancelAccess(authentication, id);
+    return service.updateAppointment(id, request.serviceType(), request.status(), request.amount());
+  }
+
+  @DeleteMapping("/appointments/{id}")
+  @PreAuthorize(
+      "hasAnyRole('PATIENT','RECEPTION_STAFF','DOCTOR','DIETITIAN','SYSTEM_ADMIN','MEDICAL_CENTER_COORDINATOR')")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  void deleteAppointment(Authentication authentication, @PathVariable UUID id) {
+    requireCancelAccess(authentication, id);
+    service.deleteAppointment(id);
+  }
+
   @PostMapping("/appointments/{id}/cancel")
   @PreAuthorize(
       "hasAnyRole('PATIENT','RECEPTION_STAFF','DOCTOR','DIETITIAN','SYSTEM_ADMIN','MEDICAL_CENTER_COORDINATOR')")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
   void cancel(Authentication authentication, @PathVariable UUID id) {
     requireCancelAccess(authentication, id);
     service.cancel(id);
@@ -168,6 +189,11 @@ public class AppointmentController {
 
   record UpdateSlotRequest(
       @NotNull LocalDateTime startTime, Integer durationMinutes) {}
+
+  record UpdateAppointmentRequest(
+      String serviceType,
+      String status,
+      @DecimalMin("0.00") BigDecimal amount) {}
 
   record HoldRequest(
       @NotNull UUID slotId,

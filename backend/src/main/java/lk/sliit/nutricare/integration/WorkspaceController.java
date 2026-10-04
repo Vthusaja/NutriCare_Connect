@@ -230,6 +230,149 @@ public class WorkspaceController {
     }
   }
 
+  @GetMapping("/invoices")
+  @PreAuthorize(
+      "hasAnyRole('SYSTEM_ADMIN','FINANCE_EXECUTIVE','OPERATIONS_MANAGER','RECEPTION_STAFF','PATIENT')")
+  public List<InvoiceView> invoices(Authentication authentication) {
+    String role = roleOf(authentication);
+    String sql =
+        """
+        SELECT i.id, i.invoice_number, i.appointment_id, i.amount, i.status, i.created_at,
+               a.patient_id, p.full_name patient_name, a.service_type
+        FROM invoices i
+        JOIN appointments a ON a.id = i.appointment_id
+        JOIN user_accounts p ON p.id = a.patient_id
+        """;
+    Object[] parameters = new Object[0];
+    if ("PATIENT".equals(role)) {
+      sql += " WHERE a.patient_id = ?";
+      parameters = new Object[] {authentication.getName()};
+    }
+    sql += " ORDER BY i.created_at DESC";
+    return jdbc.query(
+        sql,
+        (row, ignored) ->
+            new InvoiceView(
+                row.getString("id"),
+                row.getString("invoice_number"),
+                row.getString("appointment_id"),
+                row.getString("patient_id"),
+                row.getString("patient_name"),
+                row.getString("service_type"),
+                row.getBigDecimal("amount"),
+                row.getString("status"),
+                toDateTime(row.getTimestamp("created_at"))),
+        parameters);
+  }
+
+  @PostMapping("/invoices")
+  @PreAuthorize(
+      "hasAnyRole('SYSTEM_ADMIN','FINANCE_EXECUTIVE','OPERATIONS_MANAGER','RECEPTION_STAFF')")
+  @ResponseStatus(HttpStatus.CREATED)
+  public InvoiceView createInvoice(@RequestBody CreateInvoiceRequest request) {
+    if (request.appointmentId() == null || request.appointmentId().isBlank()) {
+      throw new IllegalArgumentException("Appointment ID is required");
+    }
+    if (request.amount() == null || request.amount().compareTo(BigDecimal.ZERO) < 0) {
+      throw new IllegalArgumentException("Valid invoice amount is required");
+    }
+    // Verify appointment exists
+    Integer exists =
+        jdbc.queryForObject(
+            "SELECT COUNT(*) FROM appointments WHERE id = ?", Integer.class, request.appointmentId());
+    if (exists == null || exists == 0) {
+      throw new IllegalArgumentException("Appointment not found");
+    }
+    // Check if appointment already has an invoice
+    Integer hasInvoice =
+        jdbc.queryForObject(
+            "SELECT COUNT(*) FROM invoices WHERE appointment_id = ?",
+            Integer.class,
+            request.appointmentId());
+    if (hasInvoice != null && hasInvoice > 0) {
+      throw new IllegalArgumentException("An invoice already exists for this appointment");
+    }
+    String id = UUID.randomUUID().toString();
+    String number = "INV-" + System.currentTimeMillis();
+    String status =
+        request.status() == null || request.status().isBlank() ? "PENDING" : request.status();
+    jdbc.update(
+        """
+        INSERT INTO invoices (id, invoice_number, appointment_id, amount, status, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        id,
+        number,
+        request.appointmentId(),
+        request.amount(),
+        status,
+        Timestamp.valueOf(LocalDateTime.now()));
+    return loadInvoice(id);
+  }
+
+  @PutMapping("/invoices/{id}")
+  @PreAuthorize(
+      "hasAnyRole('SYSTEM_ADMIN','FINANCE_EXECUTIVE','OPERATIONS_MANAGER','RECEPTION_STAFF')")
+  public InvoiceView updateInvoice(
+      @PathVariable String id, @RequestBody UpdateInvoiceRequest request) {
+    if (request.amount() == null || request.amount().compareTo(BigDecimal.ZERO) < 0) {
+      throw new IllegalArgumentException("Valid invoice amount is required");
+    }
+    String status =
+        request.status() == null || request.status().isBlank() ? "PENDING" : request.status();
+    int updated =
+        jdbc.update(
+            "UPDATE invoices SET amount = ?, status = ? WHERE id = ?",
+            request.amount(),
+            status,
+            id);
+    if (updated == 0) {
+      throw new IllegalArgumentException("Invoice not found");
+    }
+    return loadInvoice(id);
+  }
+
+  @DeleteMapping("/invoices/{id}")
+  @PreAuthorize(
+      "hasAnyRole('SYSTEM_ADMIN','FINANCE_EXECUTIVE','OPERATIONS_MANAGER','RECEPTION_STAFF')")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  public void deleteInvoice(@PathVariable String id) {
+    jdbc.update("DELETE FROM payments WHERE invoice_id = ?", id);
+    int deleted = jdbc.update("DELETE FROM invoices WHERE id = ?", id);
+    if (deleted == 0) {
+      throw new IllegalArgumentException("Invoice not found");
+    }
+  }
+
+  private InvoiceView loadInvoice(String id) {
+    List<InvoiceView> rows =
+        jdbc.query(
+            """
+            SELECT i.id, i.invoice_number, i.appointment_id, i.amount, i.status, i.created_at,
+                   a.patient_id, p.full_name patient_name, a.service_type
+            FROM invoices i
+            JOIN appointments a ON a.id = i.appointment_id
+            JOIN user_accounts p ON p.id = a.patient_id
+            WHERE i.id = ?
+            """,
+            (row, ignored) ->
+                new InvoiceView(
+                    row.getString("id"),
+                    row.getString("invoice_number"),
+                    row.getString("appointment_id"),
+                    row.getString("patient_id"),
+                    row.getString("patient_name"),
+                    row.getString("service_type"),
+                    row.getBigDecimal("amount"),
+                    row.getString("status"),
+                    toDateTime(row.getTimestamp("created_at"))),
+            id);
+    if (rows.isEmpty()) {
+      throw new IllegalArgumentException("Invoice not found");
+    }
+    return rows.get(0);
+  }
+
   @GetMapping("/summary")
   public Map<String, Object> summary(Principal principal, Authentication authentication) {
     List<AppointmentView> visibleAppointments = appointments(authentication);
@@ -389,4 +532,24 @@ public class WorkspaceController {
       String practitionerId, LocalDateTime startTime, Integer durationMinutes) {}
 
   public record UpdateSlotRequest(LocalDateTime startTime, Integer durationMinutes) {}
+
+  public record InvoiceView(
+      String id,
+      String invoiceNumber,
+      String appointmentId,
+      String patientId,
+      String patientName,
+      String serviceType,
+      BigDecimal amount,
+      String status,
+      LocalDateTime createdAt) {}
+
+  public record CreateInvoiceRequest(
+      String appointmentId,
+      BigDecimal amount,
+      String status) {}
+
+  public record UpdateInvoiceRequest(
+      BigDecimal amount,
+      String status) {}
 }

@@ -32,6 +32,7 @@ public class AuthService {
   private final AccountMailer emails;
   private final AccountIdService accountIds;
   private final boolean exposeDemoOtp;
+  private final org.springframework.jdbc.core.JdbcTemplate jdbc;
   private final SecureRandom random = new SecureRandom();
 
   public AuthService(
@@ -42,7 +43,8 @@ public class AuthService {
       PasswordResetOtpRepository resetOtps,
       AccountMailer emails,
       AccountIdService accountIds,
-      @Value("${nutricare.demo-notifications:true}") boolean exposeDemoOtp) {
+      @Value("${nutricare.demo-notifications:true}") boolean exposeDemoOtp,
+      org.springframework.beans.factory.ObjectProvider<org.springframework.jdbc.core.JdbcTemplate> jdbcProvider) {
     this.users = users;
     this.passwords = passwords;
     this.tokens = tokens;
@@ -51,6 +53,7 @@ public class AuthService {
     this.emails = emails;
     this.accountIds = accountIds;
     this.exposeDemoOtp = exposeDemoOtp;
+    this.jdbc = jdbcProvider.getIfAvailable();
   }
 
   @Transactional
@@ -116,6 +119,74 @@ public class AuthService {
         new AuditEvent(
             actorId, enabled ? "ENABLE_USER" : "DISABLE_USER", "USER", userId.toString()));
     return users.save(user);
+  }
+
+  @Transactional
+  public void deleteUser(String actorId, String userId) {
+    if (actorId.equals(userId)) {
+      throw new IllegalArgumentException("Administrators cannot delete their own account");
+    }
+    UserAccount user =
+        users
+            .findById(userId)
+            .orElseThrow(() -> new IllegalArgumentException("User account not found"));
+
+    if (jdbc != null) {
+      // 1. Password reset OTPs
+      jdbc.update("DELETE FROM password_reset_otps WHERE user_id = ?", userId);
+
+      // 2. Health alerts and checkups
+      jdbc.update(
+          "DELETE FROM health_alerts WHERE patient_id = ? OR health_check_id IN (SELECT id FROM health_checks WHERE patient_id = ? OR practitioner_id = ?)",
+          userId,
+          userId,
+          userId);
+      jdbc.update(
+          "DELETE FROM health_checks WHERE patient_id = ? OR practitioner_id = ?", userId, userId);
+
+      // 3. Progress logs and diet plans
+      jdbc.update(
+          "DELETE FROM progress_logs WHERE patient_id = ? OR diet_plan_id IN (SELECT id FROM diet_plans WHERE patient_id = ? OR dietitian_id = ?)",
+          userId,
+          userId,
+          userId);
+      jdbc.update(
+          "DELETE FROM diet_plans WHERE patient_id = ? OR dietitian_id = ?", userId, userId);
+
+      // 4. Messages and notifications
+      jdbc.update(
+          "DELETE FROM secure_messages WHERE sender_id = ? OR recipient_id = ? OR patient_id = ?",
+          userId,
+          userId,
+          userId);
+      jdbc.update("DELETE FROM notifications WHERE recipient_id = ?", userId);
+
+      // 5. Complaints and feedback
+      jdbc.update(
+          "DELETE FROM complaints WHERE feedback_id IN (SELECT id FROM feedback WHERE patient_id = ? OR practitioner_id = ?)",
+          userId,
+          userId);
+      jdbc.update("DELETE FROM feedback WHERE patient_id = ? OR practitioner_id = ?", userId, userId);
+
+      // 6. Payments, invoices, appointments, availability slots
+      jdbc.update(
+          "DELETE FROM payments WHERE invoice_id IN (SELECT id FROM invoices WHERE appointment_id IN (SELECT id FROM appointments WHERE patient_id = ? OR practitioner_id = ?))",
+          userId,
+          userId);
+      jdbc.update(
+          "DELETE FROM invoices WHERE appointment_id IN (SELECT id FROM appointments WHERE patient_id = ? OR practitioner_id = ?)",
+          userId,
+          userId);
+      jdbc.update(
+          "DELETE FROM appointments WHERE patient_id = ? OR practitioner_id = ?", userId, userId);
+      jdbc.update("DELETE FROM availability_slots WHERE practitioner_id = ?", userId);
+
+      // 7. Audit events
+      jdbc.update("DELETE FROM audit_events WHERE actor_id = ?", userId);
+    }
+
+    users.delete(user);
+    audit.save(new AuditEvent(actorId, "DELETE_USER", "USER", userId));
   }
 
   @Transactional

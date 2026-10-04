@@ -1,12 +1,9 @@
--- LEGACY MANUAL SCHEMA: DO NOT RUN AGAINST THE SPRING BOOT APPLICATION DATABASE.
--- This file uses INT identifiers and cascading deletes; the application uses UUID
--- identifiers and Flyway migrations under backend/src/main/resources/db/migration.
--- ============================================================================== 
--- NutriCare System Database Schema
--- Location: Sri Lanka
--- Currency: LKR
--- Engine: InnoDB
--- Charset: utf8mb4
+-- ==============================================================================
+-- NutriCare Connect — Complete Database Schema & Dummy Dataset
+-- Database: MySQL 8.0+
+-- Charset: utf8mb4 / utf8mb4_unicode_ci
+-- Default Password for all demo accounts: password123
+-- BCrypt Hash: $2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy
 -- ==============================================================================
 
 DROP DATABASE IF EXISTS nutricare;
@@ -16,9 +13,8 @@ USE nutricare;
 SET FOREIGN_KEY_CHECKS = 0;
 
 -- ==============================================================================
--- DROP TABLES IN REVERSE DEPENDENCY ORDER
+-- 1. DROP EXISTING TABLES (Reverse Dependency Order)
 -- ==============================================================================
-DROP TABLE IF EXISTS audit_events;
 DROP TABLE IF EXISTS complaints;
 DROP TABLE IF EXISTS feedback;
 DROP TABLE IF EXISTS notifications;
@@ -31,358 +27,391 @@ DROP TABLE IF EXISTS payments;
 DROP TABLE IF EXISTS invoices;
 DROP TABLE IF EXISTS appointments;
 DROP TABLE IF EXISTS availability_slots;
+DROP TABLE IF EXISTS email_delivery_attempts;
+DROP TABLE IF EXISTS password_reset_otps;
+DROP TABLE IF EXISTS audit_events;
+DROP TABLE IF EXISTS account_id_counters;
 DROP TABLE IF EXISTS user_accounts;
 
+SET FOREIGN_KEY_CHECKS = 1;
+
 -- ==============================================================================
--- CREATE TABLES IN DEPENDENCY ORDER
+-- 2. CREATE TABLES (Dependency Order)
 -- ==============================================================================
 
--- 1. user_accounts
+-- 2.1 User Accounts
 CREATE TABLE user_accounts (
-    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-    full_name VARCHAR(255) NOT NULL,
-    email VARCHAR(255) NOT NULL UNIQUE,
-    password_hash VARCHAR(255) NOT NULL,
+    id VARCHAR(16) NOT NULL PRIMARY KEY,
+    full_name VARCHAR(120) NOT NULL,
+    email VARCHAR(190) NOT NULL UNIQUE,
+    phone_number VARCHAR(30) NULL,
+    date_of_birth DATE NULL,
+    address VARCHAR(500) NULL,
+    password_hash VARCHAR(100) NOT NULL,
     role VARCHAR(50) NOT NULL,
-    locked TINYINT(1) NOT NULL DEFAULT 0,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    must_change_password BOOLEAN NOT NULL DEFAULT FALSE,
+    locked BOOLEAN NOT NULL DEFAULT FALSE,
     failed_attempts INT NOT NULL DEFAULT 0,
-    created_at DATETIME NOT NULL
+    created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    updated_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6)
 ) ENGINE=InnoDB;
 
--- 2. availability_slots
+-- 2.2 Account ID Counters (For sequential role-based IDs e.g. P001, D001)
+CREATE TABLE account_id_counters (
+    prefix VARCHAR(3) NOT NULL PRIMARY KEY,
+    next_value INT NOT NULL
+) ENGINE=InnoDB;
+
+-- 2.3 Password Reset OTPs
+CREATE TABLE password_reset_otps (
+    id VARCHAR(36) NOT NULL PRIMARY KEY,
+    user_id VARCHAR(16) NOT NULL,
+    otp_hash VARCHAR(100) NOT NULL,
+    expires_at TIMESTAMP(6) NOT NULL,
+    used BOOLEAN NOT NULL DEFAULT FALSE,
+    attempts INT NOT NULL DEFAULT 0,
+    created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    INDEX idx_reset_user_created (user_id, created_at),
+    CONSTRAINT fk_reset_user FOREIGN KEY (user_id) REFERENCES user_accounts(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+-- 2.4 Email Delivery Attempts
+CREATE TABLE email_delivery_attempts (
+    id VARCHAR(36) NOT NULL PRIMARY KEY,
+    recipient_email VARCHAR(190) NOT NULL,
+    template VARCHAR(80) NOT NULL,
+    status VARCHAR(30) NOT NULL,
+    message_preview VARCHAR(500) NOT NULL,
+    created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    INDEX idx_email_status_created (status, created_at)
+) ENGINE=InnoDB;
+
+-- 2.5 Audit Events
+CREATE TABLE audit_events (
+    id VARCHAR(36) NOT NULL PRIMARY KEY,
+    actor_id VARCHAR(16) NULL,
+    operation VARCHAR(80) NOT NULL,
+    entity_type VARCHAR(80) NOT NULL,
+    entity_id VARCHAR(80) NULL,
+    occurred_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    INDEX idx_audit_time (occurred_at)
+) ENGINE=InnoDB;
+
+-- 2.6 Practitioner Availability Slots
 CREATE TABLE availability_slots (
-    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-    practitioner_id INT NOT NULL,
+    id VARCHAR(36) NOT NULL PRIMARY KEY,
+    practitioner_id VARCHAR(16) NOT NULL,
     start_time DATETIME NOT NULL,
-    duration_minutes INT NOT NULL,
-    status VARCHAR(50) NOT NULL,
-    hold_expires_at DATETIME NULL,
-    version INT NOT NULL DEFAULT 1,
-    UNIQUE KEY uk_practitioner_time (practitioner_id, start_time),
-    FOREIGN KEY (practitioner_id) REFERENCES user_accounts(id) ON DELETE CASCADE
+    duration_minutes INT NOT NULL DEFAULT 60,
+    status VARCHAR(50) NOT NULL DEFAULT 'AVAILABLE',
+    hold_expires_at TIMESTAMP(6) NULL,
+    version BIGINT NOT NULL DEFAULT 0,
+    CONSTRAINT uk_practitioner_slot UNIQUE (practitioner_id, start_time),
+    CONSTRAINT fk_slot_practitioner FOREIGN KEY (practitioner_id) REFERENCES user_accounts(id) ON DELETE RESTRICT
 ) ENGINE=InnoDB;
 
--- 3. appointments
+-- 2.7 Appointments
 CREATE TABLE appointments (
-    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-    slot_id INT NOT NULL,
-    patient_id INT NOT NULL,
-    practitioner_id INT NOT NULL,
+    id VARCHAR(36) NOT NULL PRIMARY KEY,
+    slot_id VARCHAR(36) NOT NULL,
+    patient_id VARCHAR(16) NOT NULL,
+    practitioner_id VARCHAR(16) NOT NULL,
     service_type VARCHAR(100) NOT NULL,
     status VARCHAR(50) NOT NULL,
-    created_at DATETIME NOT NULL,
-    INDEX idx_patient_id (patient_id),
-    FOREIGN KEY (slot_id) REFERENCES availability_slots(id) ON DELETE CASCADE,
-    FOREIGN KEY (patient_id) REFERENCES user_accounts(id) ON DELETE CASCADE,
-    FOREIGN KEY (practitioner_id) REFERENCES user_accounts(id) ON DELETE CASCADE
+    created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    INDEX idx_appointment_patient (patient_id),
+    CONSTRAINT fk_appointment_slot FOREIGN KEY (slot_id) REFERENCES availability_slots(id) ON DELETE RESTRICT,
+    CONSTRAINT fk_appointment_patient FOREIGN KEY (patient_id) REFERENCES user_accounts(id) ON DELETE RESTRICT,
+    CONSTRAINT fk_appointment_practitioner FOREIGN KEY (practitioner_id) REFERENCES user_accounts(id) ON DELETE RESTRICT
 ) ENGINE=InnoDB;
 
--- 4. invoices
+-- 2.8 Invoices
 CREATE TABLE invoices (
-    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    id VARCHAR(36) NOT NULL PRIMARY KEY,
     invoice_number VARCHAR(50) NOT NULL UNIQUE,
-    appointment_id INT NOT NULL UNIQUE,
+    appointment_id VARCHAR(36) NOT NULL,
     amount DECIMAL(10, 2) NOT NULL,
     status VARCHAR(50) NOT NULL,
-    created_at DATETIME NOT NULL,
-    FOREIGN KEY (appointment_id) REFERENCES appointments(id) ON DELETE CASCADE
+    created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    CONSTRAINT fk_invoice_appointment FOREIGN KEY (appointment_id) REFERENCES appointments(id) ON DELETE RESTRICT
 ) ENGINE=InnoDB;
 
--- 5. payments
+-- 2.9 Payments
 CREATE TABLE payments (
-    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-    invoice_id INT NOT NULL,
+    id VARCHAR(36) NOT NULL PRIMARY KEY,
+    invoice_id VARCHAR(36) NOT NULL,
     reference VARCHAR(100) NOT NULL,
     amount DECIMAL(10, 2) NOT NULL,
     method VARCHAR(50) NOT NULL,
     status VARCHAR(50) NOT NULL,
-    created_at DATETIME NOT NULL,
-    FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE
+    created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    CONSTRAINT fk_payment_invoice FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE RESTRICT
 ) ENGINE=InnoDB;
 
--- 6. health_checks
+-- 2.10 Health Checks
 CREATE TABLE health_checks (
-    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-    patient_id INT NOT NULL,
-    practitioner_id INT NOT NULL,
-    weight_kg DECIMAL(5, 2) NOT NULL,
-    bmi DECIMAL(4, 2) NOT NULL,
-    systolic INT NOT NULL,
-    diastolic INT NOT NULL,
-    blood_sugar DECIMAL(5, 2) NOT NULL,
-    temperature DECIMAL(4, 2) NOT NULL,
-    notes TEXT,
-    recorded_at DATETIME NOT NULL,
-    INDEX idx_patient_recorded (patient_id, recorded_at),
-    FOREIGN KEY (patient_id) REFERENCES user_accounts(id) ON DELETE CASCADE,
-    FOREIGN KEY (practitioner_id) REFERENCES user_accounts(id) ON DELETE CASCADE
+    id VARCHAR(36) NOT NULL PRIMARY KEY,
+    patient_id VARCHAR(16) NOT NULL,
+    practitioner_id VARCHAR(16) NOT NULL,
+    weight_kg DECIMAL(5, 2) NULL,
+    bmi DECIMAL(5, 2) NULL,
+    systolic INT NULL,
+    diastolic INT NULL,
+    blood_sugar DECIMAL(5, 2) NULL,
+    temperature DECIMAL(5, 2) NULL,
+    notes VARCHAR(2000) NULL,
+    recorded_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    INDEX idx_health_patient (patient_id),
+    CONSTRAINT fk_health_patient FOREIGN KEY (patient_id) REFERENCES user_accounts(id) ON DELETE RESTRICT,
+    CONSTRAINT fk_health_practitioner FOREIGN KEY (practitioner_id) REFERENCES user_accounts(id) ON DELETE RESTRICT
 ) ENGINE=InnoDB;
 
--- 7. health_alerts
+-- 2.11 Health Alerts
 CREATE TABLE health_alerts (
-    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-    health_check_id INT NOT NULL,
-    patient_id INT NOT NULL,
+    id VARCHAR(36) NOT NULL PRIMARY KEY,
+    health_check_id VARCHAR(36) NOT NULL,
+    patient_id VARCHAR(16) NOT NULL,
     priority VARCHAR(50) NOT NULL,
-    message TEXT NOT NULL,
+    message VARCHAR(500) NOT NULL,
     status VARCHAR(50) NOT NULL,
-    created_at DATETIME NOT NULL,
-    FOREIGN KEY (health_check_id) REFERENCES health_checks(id) ON DELETE CASCADE,
-    FOREIGN KEY (patient_id) REFERENCES user_accounts(id) ON DELETE CASCADE
+    created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    INDEX idx_alert_patient (patient_id),
+    CONSTRAINT fk_alert_check FOREIGN KEY (health_check_id) REFERENCES health_checks(id) ON DELETE RESTRICT,
+    CONSTRAINT fk_alert_patient FOREIGN KEY (patient_id) REFERENCES user_accounts(id) ON DELETE RESTRICT
 ) ENGINE=InnoDB;
 
--- 8. diet_plans
+-- 2.12 Diet Plans
 CREATE TABLE diet_plans (
-    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-    patient_id INT NOT NULL,
-    dietitian_id INT NOT NULL,
+    id VARCHAR(36) NOT NULL PRIMARY KEY,
+    patient_id VARCHAR(16) NOT NULL,
+    dietitian_id VARCHAR(16) NOT NULL,
     title VARCHAR(255) NOT NULL,
-    calorie_target INT NOT NULL,
-    exclusions TEXT,
-    meal_schedule TEXT,
+    calorie_target INT NULL,
+    exclusions VARCHAR(500) NULL,
+    meal_schedule VARCHAR(3000) NULL,
     status VARCHAR(50) NOT NULL,
-    created_at DATETIME NOT NULL,
-    INDEX idx_patient_id (patient_id),
-    FOREIGN KEY (patient_id) REFERENCES user_accounts(id) ON DELETE CASCADE,
-    FOREIGN KEY (dietitian_id) REFERENCES user_accounts(id) ON DELETE CASCADE
+    created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    INDEX idx_diet_patient (patient_id),
+    CONSTRAINT fk_diet_patient FOREIGN KEY (patient_id) REFERENCES user_accounts(id) ON DELETE RESTRICT,
+    CONSTRAINT fk_diet_dietitian FOREIGN KEY (dietitian_id) REFERENCES user_accounts(id) ON DELETE RESTRICT
 ) ENGINE=InnoDB;
 
--- 9. progress_logs
+-- 2.13 Progress Logs
 CREATE TABLE progress_logs (
-    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-    patient_id INT NOT NULL,
-    diet_plan_id INT NULL,
+    id VARCHAR(36) NOT NULL PRIMARY KEY,
+    patient_id VARCHAR(16) NOT NULL,
+    diet_plan_id VARCHAR(36) NULL,
     log_date DATE NOT NULL,
-    weight_kg DECIMAL(5, 2) NOT NULL,
-    bmi DECIMAL(4, 2) NOT NULL,
-    water_glasses INT NOT NULL,
-    meals_completed INT NOT NULL,
-    created_at DATETIME NOT NULL,
-    INDEX idx_patient_date (patient_id, log_date),
-    FOREIGN KEY (patient_id) REFERENCES user_accounts(id) ON DELETE CASCADE,
-    FOREIGN KEY (diet_plan_id) REFERENCES diet_plans(id) ON DELETE SET NULL
+    weight_kg DECIMAL(5, 2) NULL,
+    bmi DECIMAL(5, 2) NULL,
+    water_glasses INT NULL,
+    meals_completed INT NULL,
+    created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    INDEX idx_progress_patient (patient_id),
+    CONSTRAINT fk_progress_patient FOREIGN KEY (patient_id) REFERENCES user_accounts(id) ON DELETE RESTRICT,
+    CONSTRAINT fk_progress_plan FOREIGN KEY (diet_plan_id) REFERENCES diet_plans(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
--- 10. secure_messages
+-- 2.14 Secure Messages
 CREATE TABLE secure_messages (
-    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-    sender_id INT NOT NULL,
-    recipient_id INT NOT NULL,
-    patient_id INT NOT NULL,
-    body TEXT NOT NULL,
-    sent_at DATETIME NOT NULL,
-    INDEX idx_patient_sent (patient_id, sent_at),
-    FOREIGN KEY (sender_id) REFERENCES user_accounts(id) ON DELETE CASCADE,
-    FOREIGN KEY (recipient_id) REFERENCES user_accounts(id) ON DELETE CASCADE,
-    FOREIGN KEY (patient_id) REFERENCES user_accounts(id) ON DELETE CASCADE
+    id VARCHAR(36) NOT NULL PRIMARY KEY,
+    sender_id VARCHAR(16) NOT NULL,
+    recipient_id VARCHAR(16) NOT NULL,
+    patient_id VARCHAR(16) NOT NULL,
+    body VARCHAR(2000) NOT NULL,
+    sent_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    INDEX idx_msg_sender (sender_id),
+    INDEX idx_msg_recipient (recipient_id),
+    CONSTRAINT fk_message_sender FOREIGN KEY (sender_id) REFERENCES user_accounts(id) ON DELETE RESTRICT,
+    CONSTRAINT fk_message_recipient FOREIGN KEY (recipient_id) REFERENCES user_accounts(id) ON DELETE RESTRICT,
+    CONSTRAINT fk_message_patient FOREIGN KEY (patient_id) REFERENCES user_accounts(id) ON DELETE RESTRICT
 ) ENGINE=InnoDB;
 
--- 11. notifications
+-- 2.15 Notifications
 CREATE TABLE notifications (
-    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-    recipient_id INT NOT NULL,
+    id VARCHAR(36) NOT NULL PRIMARY KEY,
+    recipient_id VARCHAR(16) NOT NULL,
     type VARCHAR(50) NOT NULL,
     channel VARCHAR(50) NOT NULL,
-    message TEXT NOT NULL,
+    message VARCHAR(500) NOT NULL,
     status VARCHAR(50) NOT NULL,
-    attempts INT NOT NULL DEFAULT 0,
-    retry_at DATETIME NULL,
-    created_at DATETIME NOT NULL,
-    INDEX idx_status_retry (status, retry_at),
-    FOREIGN KEY (recipient_id) REFERENCES user_accounts(id) ON DELETE CASCADE
+    attempts INT NOT NULL DEFAULT 1,
+    retry_at TIMESTAMP(6) NULL,
+    created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    INDEX idx_notif_recipient (recipient_id),
+    CONSTRAINT fk_notification_recipient FOREIGN KEY (recipient_id) REFERENCES user_accounts(id) ON DELETE RESTRICT
 ) ENGINE=InnoDB;
 
--- 12. feedback
+-- 2.16 Feedback
 CREATE TABLE feedback (
-    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-    patient_id INT NOT NULL,
-    practitioner_id INT NOT NULL,
-    appointment_id INT NOT NULL,
-    rating INT NOT NULL CHECK (rating >= 1 AND rating <= 5),
-    comments TEXT,
-    created_at DATETIME NOT NULL,
-    FOREIGN KEY (patient_id) REFERENCES user_accounts(id) ON DELETE CASCADE,
-    FOREIGN KEY (practitioner_id) REFERENCES user_accounts(id) ON DELETE CASCADE,
-    FOREIGN KEY (appointment_id) REFERENCES appointments(id) ON DELETE CASCADE
+    id VARCHAR(36) NOT NULL PRIMARY KEY,
+    patient_id VARCHAR(16) NOT NULL,
+    practitioner_id VARCHAR(16) NOT NULL,
+    appointment_id VARCHAR(36) NOT NULL,
+    rating INT NOT NULL,
+    comments VARCHAR(1500) NULL,
+    created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    INDEX idx_feedback_patient (patient_id),
+    CONSTRAINT fk_feedback_patient FOREIGN KEY (patient_id) REFERENCES user_accounts(id) ON DELETE RESTRICT,
+    CONSTRAINT fk_feedback_practitioner FOREIGN KEY (practitioner_id) REFERENCES user_accounts(id) ON DELETE RESTRICT,
+    CONSTRAINT fk_feedback_appointment FOREIGN KEY (appointment_id) REFERENCES appointments(id) ON DELETE RESTRICT
 ) ENGINE=InnoDB;
 
--- 13. complaints
+-- 2.17 Complaints
 CREATE TABLE complaints (
-    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-    feedback_id INT NOT NULL UNIQUE,
+    id VARCHAR(36) NOT NULL PRIMARY KEY,
+    feedback_id VARCHAR(36) NOT NULL,
     priority VARCHAR(50) NOT NULL,
     status VARCHAR(50) NOT NULL,
-    created_at DATETIME NOT NULL,
-    FOREIGN KEY (feedback_id) REFERENCES feedback(id) ON DELETE CASCADE
-) ENGINE=InnoDB;
-
--- 14. audit_events
-CREATE TABLE audit_events (
-    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-    actor_id INT NULL,
-    operation VARCHAR(100) NOT NULL,
-    entity_type VARCHAR(100) NOT NULL,
-    entity_id INT NOT NULL,
-    occurred_at DATETIME NOT NULL,
-    INDEX idx_occurred_at (occurred_at),
-    FOREIGN KEY (actor_id) REFERENCES user_accounts(id) ON DELETE SET NULL
+    created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    CONSTRAINT fk_complaint_feedback FOREIGN KEY (feedback_id) REFERENCES feedback(id) ON DELETE RESTRICT
 ) ENGINE=InnoDB;
 
 
 -- ==============================================================================
--- INSERT DEMO DATA
+-- 3. DUMMY DEMO DATASET
+-- All user accounts use password: password123
 -- ==============================================================================
-START TRANSACTION;
 
--- 1. user_accounts
-INSERT INTO user_accounts (id, full_name, email, password_hash, role, locked, failed_attempts, created_at) VALUES
-(1, 'Amal Perera', 'patient@nutricare.lk', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'PATIENT', 0, 0, '2026-08-01 08:00:00'),
-(2, 'Ishara Jayasinghe', 'dietitian@nutricare.lk', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'DIETITIAN', 0, 0, '2026-08-01 08:05:00'),
-(3, 'Chamara Fernando', 'doctor@nutricare.lk', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'DOCTOR', 0, 0, '2026-08-01 08:10:00'),
-(4, 'Dilki Ranatunga', 'reception@nutricare.lk', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'RECEPTION_STAFF', 0, 0, '2026-08-01 08:15:00'),
-(5, 'System Administrator', 'admin@nutricare.lk', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'SYSTEM_ADMIN', 0, 0, '2026-08-01 08:20:00'),
-(6, 'Nuwan Perera', 'manager@nutricare.lk', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'OPERATIONS_MANAGER', 0, 0, '2026-08-01 08:25:00'),
-(7, 'Sahan Wickramasinghe', 'finance@nutricare.lk', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'FINANCE_EXECUTIVE', 0, 0, '2026-08-01 08:30:00'),
-(8, 'Nadeesha Silva', 'patient2@nutricare.lk', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'PATIENT', 0, 0, '2026-08-02 09:00:00'),
-(9, 'Ruwan Jayasuriya', 'patient3@nutricare.lk', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'PATIENT', 0, 0, '2026-08-03 10:00:00'),
-(10, 'Kavindi Fonseka', 'dietitian2@nutricare.lk', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'DIETITIAN', 0, 0, '2026-08-04 11:00:00');
+-- 3.1 User Accounts
+INSERT INTO user_accounts 
+    (id, full_name, email, phone_number, date_of_birth, address, password_hash, role, enabled, must_change_password, locked, failed_attempts, created_at, updated_at) 
+VALUES
+    ('P001', 'Kasun Perera', 'patient@nutricare.demo', '+94 77 000 0001', '1998-04-12', '12 Lake View Road, Colombo 03', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'PATIENT', TRUE, FALSE, FALSE, 0, DATE_SUB(NOW(6), INTERVAL 120 DAY), NOW(6)),
+    ('P002', 'Nadeesha Silva', 'patient2@nutricare.demo', '+94 77 000 0010', '1994-11-08', '45 Temple Road, Kandy', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'PATIENT', TRUE, FALSE, FALSE, 0, DATE_SUB(NOW(6), INTERVAL 90 DAY), NOW(6)),
+    ('P003', 'Chamara Wickramasinghe', 'patient3@nutricare.demo', '+94 71 234 5678', '1989-07-22', '88 Galle Road, Mount Lavinia', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'PATIENT', TRUE, FALSE, FALSE, 0, DATE_SUB(NOW(6), INTERVAL 45 DAY), NOW(6)),
+    ('DT001', 'Dilani Fernando', 'dietitian@nutricare.demo', '+94 77 000 0002', '1987-02-14', 'NutriCare Main Centre, Colombo 07', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'DIETITIAN', TRUE, FALSE, FALSE, 0, DATE_SUB(NOW(6), INTERVAL 180 DAY), NOW(6)),
+    ('D001', 'Dr. Ruwan Jayasinghe', 'doctor@nutricare.demo', '+94 77 000 0003', '1980-09-30', 'NutriCare Main Centre, Colombo 07', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'DOCTOR', TRUE, FALSE, FALSE, 0, DATE_SUB(NOW(6), INTERVAL 180 DAY), NOW(6)),
+    ('R001', 'Samanthi Weerasinghe', 'reception@nutricare.demo', '+94 77 000 0004', '1995-05-18', 'NutriCare Main Reception Desk', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'RECEPTION_STAFF', TRUE, FALSE, FALSE, 0, DATE_SUB(NOW(6), INTERVAL 150 DAY), NOW(6)),
+    ('A001', 'System Administrator', 'admin@nutricare.demo', '+94 11 200 0000', '1985-01-01', 'NutriCare HQ IT Department', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'SYSTEM_ADMIN', TRUE, FALSE, FALSE, 0, DATE_SUB(NOW(6), INTERVAL 200 DAY), NOW(6)),
+    ('O001', 'Operations Manager', 'ops@nutricare.demo', '+94 11 200 0001', '1982-12-05', 'NutriCare Operations Suite', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'OPERATIONS_MANAGER', TRUE, FALSE, FALSE, 0, DATE_SUB(NOW(6), INTERVAL 160 DAY), NOW(6)),
+    ('F001', 'Finance Executive', 'finance@nutricare.demo', '+94 11 200 0002', '1990-03-25', 'NutriCare Finance & Billing Dept', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'FINANCE_EXECUTIVE', TRUE, FALSE, FALSE, 0, DATE_SUB(NOW(6), INTERVAL 160 DAY), NOW(6)),
+    ('C001', 'Medical Center Coordinator', 'coordinator@nutricare.demo', '+94 11 200 0003', '1988-06-15', 'NutriCare Coordination Office', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'MEDICAL_CENTER_COORDINATOR', TRUE, FALSE, FALSE, 0, DATE_SUB(NOW(6), INTERVAL 140 DAY), NOW(6)),
+    ('PR001', 'Patient Relations Officer', 'relations@nutricare.demo', '+94 11 200 0004', '1992-08-19', 'NutriCare Patient Care Unit', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'PATIENT_RELATIONS_OFFICER', TRUE, FALSE, FALSE, 0, DATE_SUB(NOW(6), INTERVAL 140 DAY), NOW(6));
 
--- 2. availability_slots (practitioners 2,3,10 dates 2026-09-03 to 2026-09-06)
-INSERT INTO availability_slots (id, practitioner_id, start_time, duration_minutes, status, hold_expires_at) VALUES
-(1, 2, '2026-09-03 09:00:00', 60, 'BOOKED', NULL),
-(2, 2, '2026-09-03 10:00:00', 60, 'AVAILABLE', NULL),
-(3, 3, '2026-09-03 11:00:00', 60, 'BOOKED', NULL),
-(4, 10, '2026-09-04 09:00:00', 60, 'HELD', '2026-09-03 20:00:00'),
-(5, 2, '2026-09-04 10:00:00', 60, 'BOOKED', NULL),
-(6, 3, '2026-09-04 14:00:00', 60, 'AVAILABLE', NULL),
-(7, 10, '2026-09-05 09:00:00', 60, 'BOOKED', NULL),
-(8, 2, '2026-09-05 11:00:00', 60, 'BOOKED', NULL),
-(9, 3, '2026-09-05 13:00:00', 60, 'AVAILABLE', NULL),
-(10, 10, '2026-09-06 10:00:00', 60, 'BOOKED', NULL),
-(11, 2, '2026-09-06 12:00:00', 60, 'HELD', '2026-09-05 20:00:00'),
-(12, 3, '2026-09-06 15:00:00', 60, 'AVAILABLE', NULL);
+-- 3.2 Account ID Counters
+INSERT INTO account_id_counters (prefix, next_value) VALUES
+    ('P', 4),
+    ('D', 2),
+    ('DT', 2),
+    ('R', 2),
+    ('A', 2),
+    ('O', 2),
+    ('F', 2),
+    ('C', 2),
+    ('PR', 2);
 
--- 3. appointments (patients 1,8,9 with practitioners 2,3,10)
-INSERT INTO appointments (id, slot_id, patient_id, practitioner_id, service_type, status, created_at) VALUES
-(1, 1, 1, 2, 'Initial consultation', 'COMPLETED', '2026-08-20 10:00:00'),
-(2, 3, 8, 3, 'Health check-up', 'CONFIRMED', '2026-08-21 11:00:00'),
-(3, 5, 9, 2, 'Diet follow-up', 'PENDING', '2026-08-22 12:00:00'),
-(4, 7, 1, 10, 'Nutrition review', 'CONFIRMED', '2026-08-23 13:00:00'),
-(5, 8, 8, 2, 'Initial consultation', 'CANCELLED', '2026-08-24 14:00:00'),
-(6, 10, 9, 10, 'Health check-up', 'CONFIRMED', '2026-08-25 15:00:00'),
-(7, 2, 1, 2, 'Diet follow-up', 'COMPLETED', '2026-08-26 16:00:00'),
-(8, 6, 8, 3, 'Nutrition review', 'PENDING', '2026-08-27 17:00:00');
+-- 3.3 Password Reset OTPs
+INSERT INTO password_reset_otps 
+    (id, user_id, otp_hash, expires_at, used, attempts, created_at)
+VALUES
+    ('71000000-0000-0000-0000-000000000001', 'P001', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', DATE_SUB(NOW(6), INTERVAL 1 DAY), TRUE, 0, DATE_SUB(NOW(6), INTERVAL 1 DAY)),
+    ('71000000-0000-0000-0000-000000000002', 'P002', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', DATE_ADD(NOW(6), INTERVAL 10 MINUTE), FALSE, 0, NOW(6));
 
--- 4. invoices (6 rows)
-INSERT INTO invoices (id, invoice_number, appointment_id, amount, status, created_at) VALUES
-(1, 'INV-2026-0001', 1, 4500.00, 'PAID', '2026-08-20 10:05:00'),
-(2, 'INV-2026-0002', 2, 3500.00, 'PENDING', '2026-08-21 11:05:00'),
-(3, 'INV-2026-0003', 3, 2500.00, 'OVERDUE', '2026-08-22 12:05:00'),
-(4, 'INV-2026-0004', 4, 3000.00, 'PAID', '2026-08-23 13:05:00'),
-(5, 'INV-2026-0005', 6, 5000.00, 'PENDING', '2026-08-25 15:05:00'),
-(6, 'INV-2026-0006', 7, 2800.00, 'PAID', '2026-08-26 16:05:00');
+-- 3.4 Email Delivery Attempts
+INSERT INTO email_delivery_attempts 
+    (id, recipient_email, template, status, message_preview, created_at)
+VALUES
+    ('72000000-0000-0000-0000-000000000001', 'patient@nutricare.demo', 'WELCOME', 'SIMULATED_DELIVERED', 'Welcome to NutriCare Connect, Kasun! Your patient portal is now active.', DATE_SUB(NOW(6), INTERVAL 10 DAY)),
+    ('72000000-0000-0000-0000-000000000002', 'patient2@nutricare.demo', 'APPOINTMENT_CONFIRMATION', 'SIMULATED_DELIVERED', 'Your appointment with Dr. Ruwan Jayasinghe is confirmed.', DATE_SUB(NOW(6), INTERVAL 2 DAY));
 
--- 5. payments (4 rows)
-INSERT INTO payments (id, invoice_id, reference, amount, method, status, created_at) VALUES
-(1, 1, 'PAY-2026-0001', 4500.00, 'CARD', 'COMPLETED', '2026-08-20 10:10:00'),
-(2, 4, 'PAY-2026-0002', 3000.00, 'CASH', 'COMPLETED', '2026-08-23 13:10:00'),
-(3, 6, 'PAY-2026-0003', 2800.00, 'BANK_TRANSFER', 'COMPLETED', '2026-08-26 16:10:00'),
-(4, 2, 'PAY-2026-0004', 3500.00, 'CARD', 'PENDING', '2026-08-27 10:00:00');
+-- 3.5 Audit Events
+INSERT INTO audit_events 
+    (id, actor_id, operation, entity_type, entity_id, occurred_at) 
+VALUES
+    ('91000000-0000-0000-0000-000000000001', 'P001', 'LOGIN_SUCCESS', 'USER_ACCOUNT', 'P001', DATE_SUB(NOW(6), INTERVAL 2 HOUR)),
+    ('91000000-0000-0000-0000-000000000002', 'A001', 'ACCOUNT_ENABLED', 'USER_ACCOUNT', 'P002', DATE_SUB(NOW(6), INTERVAL 1 DAY)),
+    ('91000000-0000-0000-0000-000000000003', 'DT001', 'DIET_PLAN_PUBLISH', 'DIET_PLAN', '19000000-0000-0000-0000-000000000001', DATE_SUB(NOW(6), INTERVAL 12 DAY)),
+    ('91000000-0000-0000-0000-000000000004', 'D001', 'HEALTH_CHECK_CREATE', 'HEALTH_CHECK', 'e9000000-0000-0000-0000-000000000001', DATE_SUB(NOW(6), INTERVAL 14 DAY));
 
--- 6. health_checks (10 rows, July-Sept 2026)
-INSERT INTO health_checks (id, patient_id, practitioner_id, weight_kg, bmi, systolic, diastolic, blood_sugar, temperature, notes, recorded_at) VALUES
-(1, 1, 3, 78.5, 27.2, 135, 88, 110.5, 36.8, 'Initial checkup, slightly overweight.', '2026-07-10 09:30:00'),
-(2, 1, 3, 77.0, 26.6, 130, 85, 105.0, 36.6, 'Making progress.', '2026-08-10 09:30:00'),
-(3, 1, 3, 75.5, 26.1, 125, 82, 98.5, 36.7, 'Good improvement.', '2026-09-01 09:30:00'),
-(4, 8, 3, 65.0, 23.5, 120, 80, 95.0, 36.5, 'Healthy vitals.', '2026-07-15 10:00:00'),
-(5, 8, 3, 64.5, 23.3, 118, 78, 92.5, 36.5, 'Maintained health.', '2026-08-15 10:00:00'),
-(6, 9, 3, 85.0, 28.5, 145, 92, 148.0, 37.0, 'High blood sugar and pressure.', '2026-07-20 11:00:00'),
-(7, 9, 3, 83.5, 28.0, 140, 90, 135.0, 36.9, 'Diet is helping, keep monitoring.', '2026-08-20 11:00:00'),
-(8, 9, 3, 82.0, 27.5, 135, 85, 120.0, 36.8, 'Significant reduction in sugar levels.', '2026-09-02 11:00:00'),
-(9, 1, 3, 74.0, 25.6, 122, 80, 95.0, 36.6, 'Looking very healthy now.', '2026-09-03 09:30:00'),
-(10, 8, 3, 64.0, 23.1, 115, 75, 90.0, 36.4, 'Excellent condition.', '2026-09-03 10:30:00');
+-- 3.6 Availability Slots
+INSERT INTO availability_slots 
+    (id, practitioner_id, start_time, duration_minutes, status, hold_expires_at, version) 
+VALUES
+    ('a9000000-0000-0000-0000-000000000001', 'D001', DATE_SUB(NOW(6), INTERVAL 14 DAY), 60, 'BOOKED', NULL, 1),
+    ('a9000000-0000-0000-0000-000000000002', 'DT001', DATE_ADD(NOW(6), INTERVAL 3 DAY), 45, 'AVAILABLE', NULL, 0),
+    ('a9000000-0000-0000-0000-000000000003', 'D001', DATE_ADD(NOW(6), INTERVAL 4 DAY), 60, 'AVAILABLE', NULL, 0),
+    ('a9000000-0000-0000-0000-000000000004', 'DT001', DATE_SUB(NOW(6), INTERVAL 10 DAY), 45, 'BOOKED', NULL, 1),
+    ('a9000000-0000-0000-0000-000000000005', 'D001', DATE_ADD(NOW(6), INTERVAL 7 DAY), 60, 'AVAILABLE', NULL, 0);
 
--- 7. health_alerts (4 rows)
-INSERT INTO health_alerts (id, health_check_id, patient_id, priority, message, status, created_at) VALUES
-(1, 1, 1, 'MEDIUM', 'Patient BMI and blood pressure are slightly elevated.', 'ACKNOWLEDGED', '2026-07-10 09:35:00'),
-(2, 6, 9, 'HIGH', 'Urgent: High blood sugar and hypertension detected.', 'ACKNOWLEDGED', '2026-07-20 11:05:00'),
-(3, 7, 9, 'MEDIUM', 'Blood sugar improving but still elevated.', 'ACTIVE', '2026-08-20 11:05:00'),
-(4, 3, 1, 'LOW', 'Patient has reached near-normal blood pressure.', 'ACTIVE', '2026-09-01 09:35:00');
+-- 3.7 Appointments
+INSERT INTO appointments 
+    (id, slot_id, patient_id, practitioner_id, service_type, status, created_at) 
+VALUES
+    ('b9000000-0000-0000-0000-000000000001', 'a9000000-0000-0000-0000-000000000001', 'P001', 'D001', 'HEALTH_CHECK', 'COMPLETED', DATE_SUB(NOW(6), INTERVAL 16 DAY)),
+    ('b9000000-0000-0000-0000-000000000002', 'a9000000-0000-0000-0000-000000000004', 'P001', 'DT001', 'DIET_CONSULTATION', 'CONFIRMED', DATE_SUB(NOW(6), INTERVAL 10 DAY));
 
--- 8. diet_plans (4 rows)
-INSERT INTO diet_plans (id, patient_id, dietitian_id, title, calorie_target, exclusions, meal_schedule, status, created_at) VALUES
-(1, 1, 2, 'Weight management plan', 1800, 'Dairy, Processed Sugar', '3 meals, 2 snacks', 'ACTIVE', '2026-07-12 10:00:00'),
-(2, 8, 10, 'High-protein recovery plan', 2200, 'Gluten', '4 meals', 'ACTIVE', '2026-07-18 11:00:00'),
-(3, 9, 2, 'Low-sugar balanced plan', 1600, 'All added sugars, Red meat', '3 meals, strict portion control', 'ACTIVE', '2026-07-22 09:00:00'),
-(4, 1, 10, 'Low sodium heart-healthy plan', 1700, 'High sodium foods', '3 meals', 'DRAFT', '2026-09-01 10:00:00');
+-- 3.8 Invoices
+INSERT INTO invoices 
+    (id, invoice_number, appointment_id, amount, status, created_at) 
+VALUES
+    ('c9000000-0000-0000-0000-000000000001', 'NC-DEMO-0001', 'b9000000-0000-0000-0000-000000000001', 4500.00, 'PAID', DATE_SUB(NOW(6), INTERVAL 16 DAY)),
+    ('c9000000-0000-0000-0000-000000000002', 'NC-DEMO-0002', 'b9000000-0000-0000-0000-000000000002', 3000.00, 'PENDING', DATE_SUB(NOW(6), INTERVAL 10 DAY));
 
--- 9. progress_logs (16 rows)
-INSERT INTO progress_logs (id, patient_id, diet_plan_id, log_date, weight_kg, bmi, water_glasses, meals_completed, created_at) VALUES
-(1, 1, 1, '2026-08-01', 78.0, 27.0, 6, 3, '2026-08-01 20:00:00'),
-(2, 1, 1, '2026-08-08', 77.2, 26.7, 7, 3, '2026-08-08 20:00:00'),
-(3, 1, 1, '2026-08-15', 76.5, 26.4, 8, 3, '2026-08-15 20:00:00'),
-(4, 1, 1, '2026-08-22', 75.8, 26.2, 7, 2, '2026-08-22 20:00:00'),
-(5, 8, 2, '2026-08-01', 65.0, 23.5, 8, 4, '2026-08-01 20:30:00'),
-(6, 8, 2, '2026-08-08', 64.8, 23.4, 8, 4, '2026-08-08 20:30:00'),
-(7, 8, 2, '2026-08-15', 64.5, 23.3, 7, 3, '2026-08-15 20:30:00'),
-(8, 8, 2, '2026-08-22', 64.2, 23.2, 8, 4, '2026-08-22 20:30:00'),
-(9, 9, 3, '2026-08-01', 84.5, 28.3, 5, 2, '2026-08-01 21:00:00'),
-(10, 9, 3, '2026-08-08', 84.0, 28.2, 6, 3, '2026-08-08 21:00:00'),
-(11, 9, 3, '2026-08-15', 83.2, 27.9, 7, 3, '2026-08-15 21:00:00'),
-(12, 9, 3, '2026-08-22', 82.5, 27.7, 6, 3, '2026-08-22 21:00:00'),
-(13, 1, 1, '2026-08-29', 75.0, 25.9, 8, 3, '2026-08-29 20:00:00'),
-(14, 8, 2, '2026-08-29', 64.0, 23.1, 8, 4, '2026-08-29 20:30:00'),
-(15, 9, 3, '2026-08-29', 82.0, 27.5, 7, 3, '2026-08-29 21:00:00'),
-(16, 9, 3, '2026-09-02', 81.5, 27.3, 8, 3, '2026-09-02 21:00:00');
+-- 3.9 Payments
+INSERT INTO payments 
+    (id, invoice_id, reference, amount, method, status, created_at) 
+VALUES
+    ('d9000000-0000-0000-0000-000000000001', 'c9000000-0000-0000-0000-000000000001', 'DEMO-PAY-0001', 4500.00, 'DEMO_CARD', 'SUCCESS', DATE_SUB(NOW(6), INTERVAL 16 DAY));
 
--- 10. secure_messages (8 rows)
-INSERT INTO secure_messages (id, sender_id, recipient_id, patient_id, body, sent_at) VALUES
-(1, 1, 2, 1, 'Hi Dr. Ishara, can I substitute almonds for walnuts in my diet plan?', '2026-08-13 09:00:00'),
-(2, 2, 1, 1, 'Yes Amal, almonds are perfectly fine. Keep up the good work!', '2026-08-13 10:00:00'),
-(3, 9, 3, 9, 'I am feeling a bit dizzy in the mornings since the new medication.', '2026-08-22 08:30:00'),
-(4, 3, 9, 9, 'Please drink plenty of water. If it continues, come see me earlier.', '2026-08-22 09:15:00'),
-(5, 8, 10, 8, 'Can I take protein shakes post-workout?', '2026-08-25 18:00:00'),
-(6, 10, 8, 8, 'A plant-based protein shake is acceptable, but try to get protein from meals first.', '2026-08-26 08:00:00'),
-(7, 4, 1, 1, 'Reminder: Your diet follow-up appointment is tomorrow at 9 AM.', '2026-09-02 10:00:00'),
-(8, 1, 4, 1, 'Thank you, I will be there.', '2026-09-02 10:15:00');
+-- 3.10 Health Checks
+INSERT INTO health_checks 
+    (id, patient_id, practitioner_id, weight_kg, bmi, systolic, diastolic, blood_sugar, temperature, notes, recorded_at)
+VALUES
+    ('e9000000-0000-0000-0000-000000000001', 'P001', 'D001', 78.40, 26.10, 146, 92, 151.00, 36.70, 'Baseline assessment: Elevated blood sugar and mild stage 1 hypertension detected.', DATE_SUB(NOW(6), INTERVAL 14 DAY)),
+    ('e9000000-0000-0000-0000-000000000002', 'P001', 'D001', 76.90, 25.60, 132, 84, 126.00, 36.60, 'Follow-up checkup: Vitals improving following dietary adjustments.', DATE_SUB(NOW(6), INTERVAL 2 DAY)),
+    ('e9000000-0000-0000-0000-000000000003', 'P002', 'D001', 62.50, 22.40, 118, 76, 98.00, 36.80, 'Routine wellness checkup. Patient is in optimal health.', DATE_SUB(NOW(6), INTERVAL 5 DAY));
 
--- 11. notifications (10 rows)
-INSERT INTO notifications (id, recipient_id, type, channel, message, status, attempts, retry_at, created_at) VALUES
-(1, 1, 'WELCOME', 'EMAIL', 'Welcome to NutriCare, Amal!', 'DELIVERED', 1, NULL, '2026-08-01 08:05:00'),
-(2, 8, 'WELCOME', 'EMAIL', 'Welcome to NutriCare, Nadeesha!', 'DELIVERED', 1, NULL, '2026-08-02 09:05:00'),
-(3, 9, 'WELCOME', 'EMAIL', 'Welcome to NutriCare, Ruwan!', 'DELIVERED', 1, NULL, '2026-08-03 10:05:00'),
-(4, 1, 'DIET_PLAN_UPDATED', 'IN_APP', 'Your new diet plan is ready to view.', 'READ', 1, NULL, '2026-07-12 10:05:00'),
-(5, 9, 'HEALTH_ALERT', 'SMS', 'Please check your recent health alert regarding blood sugar.', 'DELIVERED', 1, NULL, '2026-07-20 11:10:00'),
-(6, 8, 'APPOINTMENT_REMINDER', 'SMS', 'Reminder: Health check-up appointment tomorrow.', 'DELIVERED', 1, NULL, '2026-08-20 11:00:00'),
-(7, 9, 'PAYMENT_DUE', 'EMAIL', 'You have an overdue invoice INV-2026-0003.', 'PENDING', 2, '2026-09-04 10:00:00', '2026-08-30 08:00:00'),
-(8, 1, 'APPOINTMENT_REMINDER', 'IN_APP', 'Upcoming appointment with Dr. Ishara.', 'READ', 1, NULL, '2026-09-02 08:00:00'),
-(9, 9, 'DIET_PLAN_UPDATED', 'IN_APP', 'Adjustments made to your low-sugar plan.', 'DELIVERED', 1, NULL, '2026-08-21 09:00:00'),
-(10, 8, 'PAYMENT_DUE', 'SMS', 'Please complete your pending payment for INV-2026-0002.', 'DELIVERED', 1, NULL, '2026-08-28 09:00:00');
+-- 3.11 Health Alerts
+INSERT INTO health_alerts 
+    (id, health_check_id, patient_id, priority, message, status, created_at) 
+VALUES
+    ('f9000000-0000-0000-0000-000000000001', 'e9000000-0000-0000-0000-000000000001', 'P001', 'HIGH', 'Blood sugar level (151 mg/dL) exceeds standard fasting threshold; clinical review recommended.', 'OPEN', DATE_SUB(NOW(6), INTERVAL 14 DAY)),
+    ('f9000000-0000-0000-0000-000000000002', 'e9000000-0000-0000-0000-000000000001', 'P001', 'MEDIUM', 'Systolic blood pressure (146 mmHg) flagged for routine monitoring.', 'OPEN', DATE_SUB(NOW(6), INTERVAL 14 DAY));
 
--- 12. feedback (6 rows)
-INSERT INTO feedback (id, patient_id, practitioner_id, appointment_id, rating, comments, created_at) VALUES
-(1, 1, 2, 1, 5, 'Very helpful and attentive.', '2026-08-20 12:00:00'),
-(2, 8, 3, 2, 4, 'Good doctor, but had to wait 15 mins.', '2026-08-21 14:00:00'),
-(3, 9, 10, 6, 5, 'Thorough health check, great advice.', '2026-08-25 17:00:00'),
-(4, 1, 2, 7, 5, 'Diet is working perfectly.', '2026-08-26 18:00:00'),
-(5, 9, 2, 3, 2, 'Felt rushed during the follow-up, not all questions answered.', '2026-08-23 10:00:00'),
-(6, 1, 10, 4, 1, 'Practitioner was rude and dismissive.', '2026-08-24 11:00:00');
+-- 3.12 Diet Plans
+INSERT INTO diet_plans 
+    (id, patient_id, dietitian_id, title, calorie_target, exclusions, meal_schedule, status, created_at)
+VALUES
+    ('19000000-0000-0000-0000-000000000001', 'P001', 'DT001', 'Balanced Sri Lankan Starter Plan', 1900, 'No refined sugar, avoid deep-fried food and shellfish', 'Breakfast: Oatmeal with fresh papaya; Lunch: Red rice with gotukola sambol and fish curry; Dinner: Vegetable soup with wholemeal roti; Snacks: Green tea and curd', 'PUBLISHED', DATE_SUB(NOW(6), INTERVAL 12 DAY)),
+    ('19000000-0000-0000-0000-000000000002', 'P002', 'DT001', 'High Protein & Lean Nutrition Plan', 2100, 'Lactose intolerance (dairy-free)', 'Breakfast: Boiled eggs with kurakkan pittu; Lunch: Brown rice with grilled chicken and dhal; Dinner: Steamed vegetables with tuna; Snacks: Roasted almonds', 'PUBLISHED', DATE_SUB(NOW(6), INTERVAL 8 DAY));
 
--- 13. complaints (2 rows)
-INSERT INTO complaints (id, feedback_id, priority, status, created_at) VALUES
-(1, 5, 'MEDIUM', 'INVESTIGATING', '2026-08-23 11:00:00'),
-(2, 6, 'HIGH', 'OPEN', '2026-08-24 12:00:00');
+-- 3.13 Progress Logs
+INSERT INTO progress_logs 
+    (id, patient_id, diet_plan_id, log_date, weight_kg, bmi, water_glasses, meals_completed, created_at)
+VALUES
+    ('29000000-0000-0000-0000-000000000001', 'P001', '19000000-0000-0000-0000-000000000001', DATE_SUB(CURRENT_DATE, INTERVAL 6 DAY), 78.10, 26.00, 6, 3, DATE_SUB(NOW(6), INTERVAL 6 DAY)),
+    ('29000000-0000-0000-0000-000000000002', 'P001', '19000000-0000-0000-0000-000000000001', DATE_SUB(CURRENT_DATE, INTERVAL 3 DAY), 77.40, 25.80, 8, 4, DATE_SUB(NOW(6), INTERVAL 3 DAY)),
+    ('29000000-0000-0000-0000-000000000003', 'P001', '19000000-0000-0000-0000-000000000001', CURRENT_DATE, 76.90, 25.60, 7, 4, NOW(6));
 
--- 14. audit_events (8 rows)
-INSERT INTO audit_events (id, actor_id, operation, entity_type, entity_id, occurred_at) VALUES
-(1, 5, 'REGISTER_USER', 'user_accounts', 1, '2026-08-01 08:00:00'),
-(2, 1, 'LOGIN', 'user_accounts', 1, '2026-08-10 09:00:00'),
-(3, 4, 'CREATE_APPOINTMENT', 'appointments', 1, '2026-08-15 10:00:00'),
-(4, 2, 'CREATE_DIET_PLAN', 'diet_plans', 1, '2026-07-12 10:00:00'),
-(5, 3, 'UPDATE_HEALTH_CHECK', 'health_checks', 6, '2026-07-20 11:00:00'),
-(6, 9, 'SEND_MESSAGE', 'secure_messages', 3, '2026-08-22 08:30:00'),
-(7, 1, 'SUBMIT_FEEDBACK', 'feedback', 1, '2026-08-20 12:00:00'),
-(8, 7, 'PROCESS_PAYMENT', 'payments', 1, '2026-08-20 10:10:00');
+-- 3.14 Secure Messages
+INSERT INTO secure_messages 
+    (id, sender_id, recipient_id, patient_id, body, sent_at) 
+VALUES
+    ('39000000-0000-0000-0000-000000000001', 'P001', 'DT001', 'P001', 'Hello Ms. Dilani, could you please review my meal log for this week?', DATE_SUB(NOW(6), INTERVAL 5 HOUR)),
+    ('39000000-0000-0000-0000-000000000002', 'DT001', 'P001', 'P001', 'Hello Kasun, your blood sugar and weight logs look very promising. Keep it up!', DATE_SUB(NOW(6), INTERVAL 4 HOUR)),
+    ('39000000-0000-0000-0000-000000000003', 'P001', 'D001', 'P001', 'Dr. Ruwan, I will bring my updated blood pressure log to our next checkup.', DATE_SUB(NOW(6), INTERVAL 2 MINUTE));
 
-COMMIT;
-SET FOREIGN_KEY_CHECKS = 1;
+-- 3.15 Notifications
+INSERT INTO notifications 
+    (id, recipient_id, type, channel, message, status, attempts, retry_at, created_at) 
+VALUES
+    ('49000000-0000-0000-0000-000000000001', 'P001', 'APPOINTMENT_REMINDER', 'SMS', 'Reminder: Your diet consultation with Ms. Dilani Fernando is scheduled for this week.', 'DELIVERED_SIMULATED', 1, NULL, DATE_SUB(NOW(6), INTERVAL 1 DAY)),
+    ('49000000-0000-0000-0000-000000000002', 'P001', 'HEALTH_ALERT', 'IN_APP', 'Alert: High blood sugar detected in your recent checkup.', 'DELIVERED_SIMULATED', 1, NULL, DATE_SUB(NOW(6), INTERVAL 14 DAY));
+
+-- 3.16 Feedback
+INSERT INTO feedback 
+    (id, patient_id, practitioner_id, appointment_id, rating, comments, created_at) 
+VALUES
+    ('59000000-0000-0000-0000-000000000001', 'P001', 'D001', 'b9000000-0000-0000-0000-000000000001', 5, 'Excellent consultation. Dr. Ruwan provided clear explanations and proactive advice.', DATE_SUB(NOW(6), INTERVAL 15 DAY));
+
+-- 3.17 Complaints
+INSERT INTO complaints 
+    (id, feedback_id, priority, status, created_at) 
+VALUES
+    ('69000000-0000-0000-0000-000000000001', '59000000-0000-0000-0000-000000000001', 'ROUTINE', 'RESOLVED', DATE_SUB(NOW(6), INTERVAL 15 DAY));
+
+-- ==============================================================================
+-- End of NutriCare Database Initialization Script
+-- ==============================================================================

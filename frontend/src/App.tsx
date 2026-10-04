@@ -19,8 +19,62 @@ import {
   Star,
   X,
 } from "lucide-react";
-import { LoginScreen, ProfileModal, RequiredPasswordChange } from "./AccountExperience";
-import { askPatientGuide, clearStoredSession, createDeliveryNotice, createDietPlan, createHealthCheck, deleteFeedback, fetchComplaints, fetchDeliveryNotices, fetchDietPlans, fetchHealthChecks, fetchMailAttempts, fetchMailStatus, fetchMessages, fetchNotifications, fetchPatientFeedback, fetchProgressLogs, fetchReportSummary, fetchUsers, fetchWorkspaceAppointments, fetchWorkspacePeople, fetchWorkspaceSlots, cancelAppointment, createAvailabilitySlot, deleteAvailabilitySlot, holdAppointment, loadStoredSession, payAppointment, updateAvailabilitySlot, logout, Notification, provisionStaff, Role, sendAdminMailTest, sendSecureMessage, Session, setUserEnabled, storedSessionRemainingMs, submitFeedback, touchStoredSession, updateFeedback, WorkspaceAppointment } from "./api";
+import {
+  askPatientGuide,
+  cancelAppointment,
+  clearStoredSession,
+  createAvailabilitySlot,
+  createDeliveryNotice,
+  createDietPlan,
+  createHealthCheck,
+  createInvoice,
+  deleteAvailabilitySlot,
+  deleteAppointment,
+  deleteDietPlan,
+  deleteFeedback,
+  deleteHealthCheck,
+  deleteInvoice,
+  deleteMessage,
+  deleteUser,
+  fetchComplaints,
+  fetchDeliveryNotices,
+  fetchDietPlans,
+  fetchHealthChecks,
+  fetchInvoices,
+  fetchMailAttempts,
+  fetchMailStatus,
+  fetchMessages,
+  fetchNotifications,
+  fetchPatientFeedback,
+  fetchProgressLogs,
+  fetchReportSummary,
+  fetchUsers,
+  fetchWorkspaceAppointments,
+  fetchWorkspacePeople,
+  fetchWorkspaceSlots,
+  holdAppointment,
+  loadStoredSession,
+  logout,
+  Notification,
+  payAppointment,
+  provisionStaff,
+  Role,
+  sendAdminMailTest,
+  sendSecureMessage,
+  Session,
+  setUserEnabled,
+  storedSessionRemainingMs,
+  submitFeedback,
+  touchStoredSession,
+  updateAppointment,
+  updateAvailabilitySlot,
+  updateDietPlan,
+  updateFeedback,
+  updateHealthCheck,
+  updateInvoice,
+  updateMessage,
+  WorkspaceAppointment,
+} from "./api";
 const UserAccessFeature = lazy(() => import("@nutricare/user-access").then((module) => ({ default: module.UserAccessFeature })));
 const AppointmentBillingFeature = lazy(() => import("@nutricare/appointment-billing").then((module) => ({ default: module.AppointmentBillingFeature })));
 const HealthCheckFeature = lazy(() => import("@nutricare/health-check").then((module) => ({ default: module.HealthCheckFeature })));
@@ -301,6 +355,11 @@ export function App() {
   }, [session]);
   const loadUsers = useCallback(() => fetchUsers(requireSession()), [requireSession]);
   const toggleUser = useCallback((id: string, enabled: boolean) => setUserEnabled(requireSession(), id, enabled), [requireSession]);
+  const removeUser = useCallback((id: string) => deleteUser(requireSession(), id), [requireSession]);
+  const loadInvoices = useCallback(() => fetchInvoices(requireSession()), [requireSession]);
+  const saveInvoice = useCallback((details: { appointmentId: string; amount: number; status?: string }) => createInvoice(requireSession(), details), [requireSession]);
+  const editInvoice = useCallback((id: string, details: { amount: number; status: string }) => updateInvoice(requireSession(), id, details), [requireSession]);
+  const removeInvoice = useCallback((id: string) => deleteInvoice(requireSession(), id), [requireSession]);
   const loadPeople = useCallback(() => fetchWorkspacePeople(requireSession()), [requireSession]);
   const loadAppointments = useCallback(() => fetchWorkspaceAppointments(requireSession()), [requireSession]);
   const loadSlots = useCallback((date: string) => fetchWorkspaceSlots(requireSession(), date), [requireSession]);
@@ -309,14 +368,21 @@ export function App() {
   const updateSlot = useCallback((id: string, details: { startTime: string; durationMinutes: number }) => updateAvailabilitySlot(requireSession(), id, details), [requireSession]);
   const deleteSlot = useCallback((id: string) => deleteAvailabilitySlot(requireSession(), id), [requireSession]);
   const cancelBooking = useCallback((id: string) => cancelAppointment(requireSession(), id), [requireSession]);
+  const editAppointment = useCallback((id: string, details: { serviceType?: string; status?: string; amount?: number }) => updateAppointment(requireSession(), id, details), [requireSession]);
   const payBooking = useCallback((id: string, details: { amount: number; method: string; status: string }) => payAppointment(requireSession(), id, details), [requireSession]);
   const loadPlans = useCallback((patientId: string) => fetchDietPlans(requireSession(), patientId), [requireSession]);
   const loadProgress = useCallback((patientId: string) => fetchProgressLogs(requireSession(), patientId), [requireSession]);
   const savePlan = useCallback((plan: { patientId: string; title: string; calorieTarget: number; exclusions?: string; mealSchedule: string }) => createDietPlan(requireSession(), plan), [requireSession]);
+  const editPlan = useCallback((id: string, plan: { title: string; calorieTarget: number; exclusions?: string; mealSchedule: string; status?: string }) => updateDietPlan(requireSession(), id, plan), [requireSession]);
+  const removePlan = useCallback((id: string) => deleteDietPlan(requireSession(), id), [requireSession]);
   const loadChecks = useCallback((patientId: string) => fetchHealthChecks(requireSession(), patientId), [requireSession]);
   const saveCheck = useCallback((check: { patientId: string; weightKg: number; bmi: number; systolic?: number; diastolic?: number; bloodSugar: number; temperature: number; notes?: string }) => createHealthCheck(requireSession(), check), [requireSession]);
+  const editCheck = useCallback((id: string, check: { weightKg: number; bmi: number; systolic?: number; diastolic?: number; bloodSugar: number; temperature: number; notes?: string }) => updateHealthCheck(requireSession(), id, check), [requireSession]);
+  const removeCheck = useCallback((id: string) => deleteHealthCheck(requireSession(), id), [requireSession]);
   const loadMessages = useCallback((patientId: string) => fetchMessages(requireSession(), patientId), [requireSession]);
   const postMessage = useCallback((details: { senderId: string; recipientId: string; patientId: string; body: string }) => sendSecureMessage(requireSession(), details), [requireSession]);
+  const editMessage = useCallback((id: string, body: string) => updateMessage(requireSession(), id, body), [requireSession]);
+  const removeMessage = useCallback((id: string) => deleteMessage(requireSession(), id), [requireSession]);
   const loadNotices = useCallback((recipientId: string) => fetchDeliveryNotices(requireSession(), recipientId), [requireSession]);
   const postNotice = useCallback((details: { recipientId: string; type: string; channel: "IN_APP" | "EMAIL" | "SMS"; message: string; simulateFailure?: boolean }) => createDeliveryNotice(requireSession(), details), [requireSession]);
   const postFeedback = useCallback((details: { patientId: string; practitionerId: string; appointmentId: string; rating: number; comments?: string }) => submitFeedback(requireSession(), details), [requireSession]);
@@ -378,11 +444,11 @@ export function App() {
         <div className="content">
           <Suspense fallback={<section className="panel empty">Preparing your care workspaceâ€¦</section>}>
             {page === "overview" && <Overview go={setPage} role={role} userName={session.user.fullName} userId={session.user.id} loadAppointments={loadAppointments} loadPlans={loadPlans} loadProgress={loadProgress} loadChecks={loadChecks} />}
-            {page === "users" && <UserAccessFeature isAdmin={role === "SYSTEM_ADMIN"} onProvision={(details) => provisionStaff(session, details.fullName, details.email, details.role)} onLoadUsers={loadUsers} onToggleUser={toggleUser} />}
-            {page === "appointments" && <AppointmentBillingFeature role={role} currentUserId={session.user.id} userName={session.user.fullName} loadAppointments={loadAppointments} loadSlots={loadSlots} loadPeople={loadPeople} createBooking={createBooking} createSlot={createSlot} updateSlot={updateSlot} deleteSlot={deleteSlot} cancelAppointment={cancelBooking} payAppointment={payBooking} />}
-            {page === "health" && <HealthCheckFeature patientOnly={role === "PATIENT"} userName={session.user.fullName} currentUserId={session.user.id} loadPeople={loadPeople} loadChecks={loadChecks} saveCheck={saveCheck} />}
-            {page === "diet" && <DietProgressFeature canManagePlans={role === "DIETITIAN" || role === "DOCTOR"} currentUserId={session.user.id} loadPeople={loadPeople} loadPlans={loadPlans} loadProgress={loadProgress} savePlan={savePlan} />}
-            {page === "messages" && <MessagingRemindersFeature patientOnly={role === "PATIENT"} currentUserId={session.user.id} userName={session.user.fullName} loadPeople={loadPeople} loadMessages={loadMessages} sendMessage={postMessage} loadNotices={loadNotices} createNotice={postNotice} />}
+            {page === "users" && <UserAccessFeature isAdmin={role === "SYSTEM_ADMIN"} onProvision={(details) => provisionStaff(session, details.fullName, details.email, details.role)} onLoadUsers={loadUsers} onToggleUser={toggleUser} onDeleteUser={removeUser} onLoadInvoices={loadInvoices} onCreateInvoice={saveInvoice} onUpdateInvoice={editInvoice} onDeleteInvoice={removeInvoice} onLoadAppointments={loadAppointments} />}
+            {page === "appointments" && <AppointmentBillingFeature role={role} currentUserId={session.user.id} userName={session.user.fullName} loadAppointments={loadAppointments} loadSlots={loadSlots} loadPeople={loadPeople} createBooking={createBooking} createSlot={createSlot} updateSlot={updateSlot} deleteSlot={deleteSlot} cancelAppointment={cancelBooking} updateAppointment={editAppointment} payAppointment={payBooking} />}
+            {page === "health" && <HealthCheckFeature patientOnly={role === "PATIENT"} userName={session.user.fullName} currentUserId={session.user.id} loadPeople={loadPeople} loadChecks={loadChecks} saveCheck={saveCheck} updateCheck={editCheck} deleteCheck={removeCheck} />}
+            {page === "diet" && <DietProgressFeature canManagePlans={role === "DIETITIAN" || role === "DOCTOR"} currentUserId={session.user.id} loadPeople={loadPeople} loadPlans={loadPlans} loadProgress={loadProgress} savePlan={savePlan} updatePlan={editPlan} deletePlan={removePlan} />}
+            {page === "messages" && <MessagingRemindersFeature patientOnly={role === "PATIENT"} currentUserId={session.user.id} userName={session.user.fullName} loadPeople={loadPeople} loadMessages={loadMessages} sendMessage={postMessage} updateMessage={editMessage} deleteMessage={removeMessage} loadNotices={loadNotices} createNotice={postNotice} />}
             {page === "analytics" && <FeedbackAnalyticsFeature patientOnly={role === "PATIENT"} currentUserId={session.user.id} loadAppointments={loadAppointments} loadFeedback={loadFeedback} submitFeedback={postFeedback} updateFeedback={editFeedback} deleteFeedback={removeFeedback} loadComplaints={loadComplaints} loadReport={loadReport} />}
             {page === "email" && role === "SYSTEM_ADMIN" && <EmailTestFeature defaultEmail={session.user.email} loadStatus={loadMailStatus} loadAttempts={loadMailAttempts} sendTest={postMailTest} />}
           </Suspense>
