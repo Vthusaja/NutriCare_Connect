@@ -75,7 +75,7 @@ import {
   updateMessage,
   WorkspaceAppointment,
 } from "./api";
-import { LoginScreen } from "./AccountExperience";
+import { LoginScreen, RequiredPasswordChange, ProfileModal } from "./AccountExperience";
 const UserAccessFeature = lazy(() => import("@nutricare/user-access").then((module) => ({ default: module.UserAccessFeature })));
 const AppointmentBillingFeature = lazy(() => import("@nutricare/appointment-billing").then((module) => ({ default: module.AppointmentBillingFeature })));
 const HealthCheckFeature = lazy(() => import("@nutricare/health-check").then((module) => ({ default: module.HealthCheckFeature })));
