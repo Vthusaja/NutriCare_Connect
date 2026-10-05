@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CircleDollarSign, KeyRound, Plus, Receipt, ShieldCheck, Trash2, UserRoundCheck, Users } from "lucide-react";
+import { CircleDollarSign, Download, FileText, KeyRound, Plus, Printer, Receipt, ShieldCheck, Trash2, UserRoundCheck, Users } from "lucide-react";
 import type { WorkspaceAppointment, WorkspaceInvoice } from "../../../frontend/src/api";
 
 type DemoUser = { id: string; fullName: string; email: string; role: string; enabled: boolean };
@@ -10,7 +10,125 @@ function money(value: number) {
   return new Intl.NumberFormat("en-LK", { style: "currency", currency: "LKR", maximumFractionDigits: 0 }).format(value);
 }
 
+function generateInvoiceHTML(inv: WorkspaceInvoice): string {
+  const dateStr = inv.createdAt ? new Date(inv.createdAt).toLocaleString() : new Date().toLocaleString();
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Invoice ${inv.invoiceNumber}</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 30px; color: #1e293b; background: #fff; }
+    .card { max-width: 750px; margin: 0 auto; border: 1px solid #cbd5e1; border-radius: 12px; padding: 36px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #059669; padding-bottom: 20px; margin-bottom: 28px; }
+    .brand h1 { margin: 0; color: #059669; font-size: 24px; }
+    .brand p { margin: 4px 0 0; color: #64748b; font-size: 13px; }
+    .title-area { text-align: right; }
+    .title-area h2 { margin: 0; color: #0f172a; font-size: 20px; text-transform: uppercase; }
+    .meta { margin-top: 4px; font-size: 13px; color: #475569; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 28px; }
+    .info h4 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; color: #64748b; letter-spacing: 0.5px; }
+    .info p { margin: 0; font-size: 15px; font-weight: 500; color: #0f172a; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 28px; }
+    th { background: #f8fafc; text-align: left; padding: 10px 14px; font-size: 12px; font-weight: 600; color: #475569; border-bottom: 1px solid #cbd5e1; }
+    td { padding: 14px; font-size: 14px; color: #1e293b; border-bottom: 1px solid #f1f5f9; }
+    .badge { display: inline-block; padding: 4px 12px; border-radius: 9999px; font-size: 12px; font-weight: 600; text-transform: uppercase; }
+    .paid { background: #dcfce7; color: #15803d; }
+    .pending { background: #fef9c3; color: #a16207; }
+    .total-area { display: flex; justify-content: flex-end; align-items: center; gap: 16px; padding-top: 16px; border-top: 2px solid #e2e8f0; }
+    .total-val { font-size: 22px; font-weight: 700; color: #059669; }
+    .footer { margin-top: 40px; text-align: center; font-size: 12px; color: #94a3b8; border-top: 1px solid #f1f5f9; padding-top: 20px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <div class="brand">
+        <h1>NutriCare Connect</h1>
+        <p>Medical & Healthcare Center</p>
+      </div>
+      <div class="title-area">
+        <h2>Medical Invoice PDF</h2>
+        <div class="meta"><strong>Invoice #:</strong> ${inv.invoiceNumber}</div>
+        <div class="meta"><strong>Issued:</strong> ${dateStr}</div>
+      </div>
+    </div>
+    <div class="grid">
+      <div class="info">
+        <h4>Patient Information</h4>
+        <p>${inv.patientName}</p>
+        <p style="font-size:13px; color:#64748b; font-weight:normal;">ID: ${inv.patientId || "N/A"}</p>
+      </div>
+      <div class="info" style="text-align: right;">
+        <h4>Invoice Status</h4>
+        <span class="badge ${inv.status === "PAID" ? "paid" : "pending"}">${inv.status}</span>
+      </div>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Service Description</th>
+          <th>Reference #</th>
+          <th style="text-align: right;">Amount (LKR)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>${inv.serviceType}</strong></td>
+          <td>${inv.appointmentId ? `Appt #${inv.appointmentId.slice(0, 8)}` : "Direct Billing"}</td>
+          <td style="text-align: right; font-weight: 600;">LKR ${Number(inv.amount).toLocaleString()}</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="total-area">
+      <span style="font-size:15px; font-weight:600; color:#475569;">Total Amount Due:</span>
+      <span class="total-val">LKR ${Number(inv.amount).toLocaleString()}</span>
+    </div>
+    <div class="footer">
+      <p>Official Computer-Generated Tax Invoice — NutriCare Connect Healthcare Platform.</p>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+function saveLocalPDFCopy(inv: WorkspaceInvoice) {
+  try {
+    const html = generateInvoiceHTML(inv);
+    localStorage.setItem(`nutricare_pdf_${inv.id}`, html);
+  } catch (e) {
+    console.warn("Failed to save local PDF copy:", e);
+  }
+}
+
+function removeLocalPDFCopy(invId: string) {
+  try {
+    localStorage.removeItem(`nutricare_pdf_${invId}`);
+  } catch (e) {
+    console.warn("Failed to remove local PDF copy:", e);
+  }
+}
+
+function downloadOrPrintInvoicePDF(inv: WorkspaceInvoice) {
+  saveLocalPDFCopy(inv);
+  const html = localStorage.getItem(`nutricare_pdf_${inv.id}`) || generateInvoiceHTML(inv);
+  const blob = new Blob([html], { type: "text/html" });
+  const url = URL.createObjectURL(blob);
+  
+  const win = window.open(url, "_blank");
+  if (win) {
+    win.onload = () => { win.print(); };
+  } else {
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${inv.invoiceNumber}.html`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+}
+
 export function UserAccessFeature({
+  initialTab = "users",
   isAdmin = false,
   onProvision,
   onLoadUsers,
@@ -22,6 +140,7 @@ export function UserAccessFeature({
   onDeleteInvoice,
   onLoadAppointments,
 }: {
+  initialTab?: "users" | "invoices";
   isAdmin?: boolean;
   onProvision?: (details: { fullName: string; email: string; role: StaffRole }) => Promise<ProvisionResult>;
   onLoadUsers?: () => Promise<DemoUser[]>;
@@ -33,7 +152,7 @@ export function UserAccessFeature({
   onDeleteInvoice?: (id: string) => Promise<void>;
   onLoadAppointments?: () => Promise<WorkspaceAppointment[]>;
 }) {
-  const [activeTab, setActiveTab] = useState<"users" | "invoices">("users");
+  const [activeTab, setActiveTab] = useState<"users" | "invoices">(initialTab);
   const [users, setUsers] = useState<DemoUser[]>([]);
   const [invoices, setInvoices] = useState<WorkspaceInvoice[]>([]);
   const [appointments, setAppointments] = useState<WorkspaceAppointment[]>([]);
@@ -53,7 +172,7 @@ export function UserAccessFeature({
     if (onLoadAppointments) {
       onLoadAppointments().then(setAppointments).catch(() => undefined);
     }
-  }, [onLoadAppointments, onLoadInvoices, onLoadUsers]);
+  }, [activeTab, onLoadAppointments, onLoadInvoices, onLoadUsers, showCreateInvoice]);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -108,8 +227,13 @@ export function UserAccessFeature({
         status: String(form.get("status")),
       });
       setInvoices((items) => [created, ...items]);
+      saveLocalPDFCopy(created);
+      downloadOrPrintInvoicePDF(created);
+      if (onLoadAppointments) {
+        onLoadAppointments().then(setAppointments).catch(() => undefined);
+      }
       setShowCreateInvoice(false);
-      setMessage("Invoice created successfully.");
+      setMessage("Invoice created successfully and local PDF copy saved.");
     } catch (reason) { setMessage(reason instanceof Error ? reason.message : "Invoice could not be created."); }
   }
 
@@ -123,6 +247,7 @@ export function UserAccessFeature({
         status: String(form.get("status")),
       });
       setInvoices((items) => items.map((item) => item.id === updated.id ? updated : item));
+      saveLocalPDFCopy(updated);
       setEditingInvoice(null);
       setMessage("Invoice updated successfully.");
     } catch (reason) { setMessage(reason instanceof Error ? reason.message : "Invoice could not be updated."); }
@@ -130,11 +255,12 @@ export function UserAccessFeature({
 
   async function handleDeleteInvoice(id: string) {
     if (!onDeleteInvoice) return;
-    if (!window.confirm("Are you sure you want to delete this invoice?")) return;
+    if (!window.confirm("Are you sure you want to delete this invoice? The local PDF copy will also be permanently removed.")) return;
     try {
       await onDeleteInvoice(id);
+      removeLocalPDFCopy(id);
       setInvoices((items) => items.filter((item) => item.id !== id));
-      setMessage("Invoice deleted successfully.");
+      setMessage("Invoice deleted and local PDF copy removed successfully.");
     } catch (reason) { setMessage(reason instanceof Error ? reason.message : "Invoice could not be deleted."); }
   }
 
@@ -292,39 +418,58 @@ export function UserAccessFeature({
                   <th>Service</th>
                   <th>Amount</th>
                   <th>Status</th>
-                  {isAdmin && <th>Actions</th>}
+                  <th>PDF Document / Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {invoices.map((inv) => (
-                  <tr key={inv.id}>
-                    <td>
-                      <strong>{inv.invoiceNumber}</strong>
-                      <br/>
-                      <small>{inv.createdAt ? new Date(inv.createdAt).toLocaleDateString() : ""}</small>
-                    </td>
-                    <td>{inv.patientName}</td>
-                    <td>{inv.serviceType}</td>
-                    <td><strong>{money(Number(inv.amount))}</strong></td>
-                    <td>
-                      <span className={inv.status === "PAID" ? "status confirmed" : "status pending"}>
-                        {inv.status}
-                      </span>
-                    </td>
-                    {isAdmin && (
+                {invoices.map((inv) => {
+                  const hasCopy = Boolean(localStorage.getItem(`nutricare_pdf_${inv.id}`));
+                  return (
+                    <tr key={inv.id}>
                       <td>
-                        <div style={{ display: "flex", gap: 6 }}>
-                          <button className="text-button" type="button" onClick={() => { setEditingInvoice(inv); setShowCreateInvoice(false); }}>
-                            Edit
+                        <strong>{inv.invoiceNumber}</strong>
+                        <br/>
+                        <small>{inv.createdAt ? new Date(inv.createdAt).toLocaleDateString() : ""}</small>
+                      </td>
+                      <td>{inv.patientName}</td>
+                      <td>{inv.serviceType}</td>
+                      <td><strong>{money(Number(inv.amount))}</strong></td>
+                      <td>
+                        <span className={inv.status === "PAID" ? "status confirmed" : "status pending"}>
+                          {inv.status}
+                        </span>
+                        {hasCopy && (
+                          <small style={{ display: "block", color: "#059669", fontSize: "11px", marginTop: "2px", fontWeight: 600 }}>
+                            ✓ Local PDF Copy
+                          </small>
+                        )}
+                      </td>
+                      <td>
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                          <button
+                            className="secondary"
+                            type="button"
+                            style={{ padding: "4px 8px", fontSize: "12px", display: "inline-flex", alignItems: "center", gap: 4 }}
+                            onClick={() => downloadOrPrintInvoicePDF(inv)}
+                            title="Download or Print Local Invoice PDF Document"
+                          >
+                            <FileText size={13}/> PDF Copy
                           </button>
-                          <button className="danger" type="button" onClick={() => void handleDeleteInvoice(inv.id)}>
-                            <Trash2 size={13}/> Delete
-                          </button>
+                          {isAdmin && (
+                            <>
+                              <button className="text-button" type="button" onClick={() => { setEditingInvoice(inv); setShowCreateInvoice(false); }}>
+                                Edit
+                              </button>
+                              <button className="danger" type="button" onClick={() => void handleDeleteInvoice(inv.id)}>
+                                <Trash2 size={13}/> Delete
+                              </button>
+                            </>
+                          )}
                         </div>
                       </td>
-                    )}
-                  </tr>
-                ))}
+                    </tr>
+                  );
+                })}
                 {invoices.length === 0 && (
                   <tr>
                     <td colSpan={6} style={{ textAlign: "center", color: "#687e74", padding: 20 }}>
@@ -352,7 +497,7 @@ export function UserAccessFeature({
                     <option value="">Select an appointment</option>
                     {appointments.map((appt) => (
                       <option key={appt.id} value={appt.id}>
-                        {appt.patientName} - {appt.serviceType} ({appt.startTime ? new Date(appt.startTime).toLocaleDateString() : ""})
+                        Patient: {appt.patientName} | Doctor: {appt.practitionerName || "N/A"} | Service: {appt.serviceType} ({appt.startTime ? new Date(appt.startTime).toLocaleString([], { dateStyle: "short", timeStyle: "short" }) : ""})
                       </option>
                     ))}
                   </select>

@@ -58,15 +58,15 @@ export function AppointmentBillingFeature({
   const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(true);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (targetDate?: string) => {
     setLoading(true);
     setNotice("");
     try {
-      const needsPeople = canBook || (canManageSlots && !isPractitioner);
+      const dateToLoad = targetDate ?? selectedDate;
       const [appointmentRows, slotRows, personRows] = await Promise.all([
         loadAppointments(),
-        loadSlots(selectedDate),
-        needsPeople ? loadPeople() : Promise.resolve([] as Person[]),
+        loadSlots(dateToLoad),
+        loadPeople().catch(() => [] as Person[]),
       ]);
       setAppointments(appointmentRows);
       setSlots(slotRows);
@@ -81,7 +81,7 @@ export function AppointmentBillingFeature({
     } finally {
       setLoading(false);
     }
-  }, [canBook, canManageSlots, isPractitioner, loadAppointments, loadPeople, loadSlots, selectedDate]);
+  }, [loadAppointments, loadPeople, loadSlots, selectedDate]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 
@@ -97,19 +97,31 @@ export function AppointmentBillingFeature({
     [people],
   );
 
+  const [payingAppointment, setPayingAppointment] = useState<Appointment | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState<"CARD" | "CASH">("CARD");
+
   async function book(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selected) { setNotice("Select an available slot first."); return; }
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
+    const slotId = String(form.get("slotId") || chosen);
+    const targetSlot = slots.find((s) => s.id === slotId) || selected;
+    if (!targetSlot) { setNotice("Select an available slot first."); return; }
+    const todayStr = localDate();
+    if (selectedDate < todayStr || new Date(targetSlot.startTime) < new Date()) {
+      setNotice("Validation Error: Cannot book an appointment for a past date or time.");
+      return;
+    }
     try {
       await createBooking({
-        slotId: selected.id,
+        slotId: targetSlot.id,
         patientId: role === "PATIENT" ? currentUserId : String(form.get("patientId")),
         serviceType: String(form.get("serviceType")),
         amount: Number(form.get("amount")),
       });
       setNotice("Slot held for 10 minutes and an invoice was generated. Confirm payment to finalize.");
-      await refresh();
+      formElement?.reset();
+      await refresh(selectedDate);
     } catch (reason) {
       setNotice(reason instanceof Error ? reason.message : "The appointment could not be created.");
     }
@@ -117,12 +129,18 @@ export function AppointmentBillingFeature({
 
   async function saveAvailability(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const date = String(form.get("slotDate"));
     const clock = String(form.get("slotTime"));
     const durationMinutes = Number(form.get("durationMinutes") || 60);
     const practitionerId = isPractitioner ? currentUserId : String(form.get("practitionerId") || "");
     const startTime = `${date}T${clock}:00`;
+    const todayStr = localDate();
+    if (date < todayStr || new Date(startTime) < new Date()) {
+      setNotice("Validation Error: Slot start time must be in the future (previous dates are blocked).");
+      return;
+    }
     try {
       if (editingSlotId) {
         await updateSlot(editingSlotId, { startTime, durationMinutes });
@@ -133,8 +151,8 @@ export function AppointmentBillingFeature({
         setNotice("Availability slot added. Patients and admin can now book it.");
       }
       setSelectedDate(date);
-      event.currentTarget.reset();
-      await refresh();
+      formElement?.reset();
+      await refresh(date);
     } catch (reason) {
       setNotice(reason instanceof Error ? reason.message : "The availability slot could not be saved.");
     }
@@ -145,7 +163,7 @@ export function AppointmentBillingFeature({
       await deleteSlot(slotId);
       if (editingSlotId === slotId) setEditingSlotId("");
       setNotice("Availability slot removed.");
-      await refresh();
+      await refresh(selectedDate);
     } catch (reason) {
       setNotice(reason instanceof Error ? reason.message : "The slot could not be removed.");
     }
@@ -182,14 +200,15 @@ export function AppointmentBillingFeature({
     }
   }
 
-  async function pay(appointment: Appointment) {
+  async function pay(appointment: Appointment, method: "CARD" | "CASH" = "CARD") {
     try {
       await payAppointment(appointment.id, {
-        amount: Number(appointment.amount ?? 0),
-        method: "CARD",
+        amount: Number(appointment.amount ?? 3500),
+        method,
         status: "PAID",
       });
-      setNotice("Payment recorded. Appointment confirmed.");
+      setNotice(`Payment of ${money(Number(appointment.amount ?? 3500))} via ${method === "CARD" ? "Card" : "Cash"} recorded. Appointment confirmed.`);
+      setPayingAppointment(null);
       await refresh();
     } catch (reason) {
       setNotice(reason instanceof Error ? reason.message : "Payment could not be recorded.");
@@ -252,7 +271,7 @@ export function AppointmentBillingFeature({
         <div className="form-grid" style={{ marginBottom: 14 }}>
           <div className="field">
             <label htmlFor="schedule-date">Schedule date</label>
-            <input id="schedule-date" type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} />
+            <input id="schedule-date" type="date" min={localDate()} value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} />
           </div>
         </div>
         <div className="chip-row">
@@ -313,7 +332,7 @@ export function AppointmentBillingFeature({
                   </small>
                   <span style={{ display: "flex", gap: 6, justifyContent: "flex-end", marginTop: 8, flexWrap: "wrap" }}>
                     {canPay && appointment.status === "HELD" && appointment.invoiceStatus !== "PAID" && (
-                      <button className="primary" type="button" onClick={() => void pay(appointment)}>Pay & confirm</button>
+                      <button className="primary" type="button" onClick={() => { setPayingAppointment(appointment); setPaymentMethod("CARD"); }}>Pay & confirm</button>
                     )}
                     {canCancel && (
                       <button className="text-button" type="button" onClick={() => setEditingAppointment(appointment)}>Edit</button>
@@ -334,6 +353,44 @@ export function AppointmentBillingFeature({
               </div>
             )}
           </div>
+
+          {payingAppointment && (
+            <div style={{ marginTop: 20, padding: 16, border: "1px solid #c9ded3", borderRadius: 12, background: "#f5faf7" }}>
+              <div className="panel-title" style={{ marginBottom: 12 }}>
+                <div>
+                  <span className="eyebrow">Confirm Payment</span>
+                  <h3>{payingAppointment.patientName} Â· {money(Number(payingAppointment.amount ?? 3500))}</h3>
+                </div>
+              </div>
+              <form
+                className="form-grid"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void pay(payingAppointment, paymentMethod);
+                }}
+              >
+                <div className="field full">
+                  <label htmlFor="pay-method">Payment Method</label>
+                  <select
+                    id="pay-method"
+                    value={paymentMethod}
+                    onChange={(event) => setPaymentMethod(event.target.value as "CARD" | "CASH")}
+                  >
+                    <option value="CARD">Card Payment (Online / Terminal)</option>
+                    <option value="CASH">Cash Payment</option>
+                  </select>
+                </div>
+                <div className="field full" style={{ display: "flex", gap: 8 }}>
+                  <button className="primary" type="submit">
+                    Record Payment ({money(Number(payingAppointment.amount ?? 3500))})
+                  </button>
+                  <button className="secondary" type="button" onClick={() => setPayingAppointment(null)}>
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
 
           {editingAppointment && (
             <div style={{ marginTop: 20, padding: 16, border: "1px solid #c9ded3", borderRadius: 12, background: "#f5faf7" }}>
@@ -400,7 +457,7 @@ export function AppointmentBillingFeature({
                 )}
                 <div className="field">
                   <label htmlFor="slotDate">Date</label>
-                  <input id="slotDate" name="slotDate" type="date" required defaultValue={editingSlot ? localDate(new Date(editingSlot.startTime)) : selectedDate} />
+                  <input id="slotDate" name="slotDate" type="date" min={localDate()} required defaultValue={editingSlot ? localDate(new Date(editingSlot.startTime)) : selectedDate} />
                 </div>
                 <div className="field">
                   <label htmlFor="slotTime">Start time</label>
@@ -444,11 +501,23 @@ export function AppointmentBillingFeature({
                   </div>
                 )}
                 <div className="field full">
-                  <label>Practitioner and time</label>
-                  <input
-                    value={selected ? `${selected.practitionerName} Â· ${dateLabel(selectedDate)} Â· ${time(selected.startTime)}` : "No available slot selected"}
-                    readOnly
-                  />
+                  <label htmlFor="slotId">Practitioner and time slot</label>
+                  <select
+                    id="slotId"
+                    name="slotId"
+                    value={chosen}
+                    onChange={(event) => setChosen(event.target.value)}
+                    required
+                  >
+                    <option value="" disabled>
+                      {available.length === 0 ? "No available slots on this date" : "Select doctor/practitioner & time slot"}
+                    </option>
+                    {available.map((slot) => (
+                      <option key={slot.id} value={slot.id}>
+                        {slot.practitionerName} — {time(slot.startTime)} ({slot.durationMinutes} mins)
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div className="field full">
                   <label htmlFor="serviceType">Service</label>

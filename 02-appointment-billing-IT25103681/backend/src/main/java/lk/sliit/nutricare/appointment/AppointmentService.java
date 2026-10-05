@@ -80,6 +80,9 @@ public class AppointmentService {
         slots
             .findForUpdate(slotId)
             .orElseThrow(() -> new IllegalArgumentException("Slot not found"));
+    if (slot.getStartTime().isBefore(LocalDateTime.now())) {
+      throw new IllegalArgumentException("Cannot book an appointment for a past date or time");
+    }
     slot.hold();
     Appointment appointment = appointments.save(new Appointment(slot, patientId, service));
     Invoice invoice = invoices.save(new Invoice(appointment.getId(), amount));
@@ -90,18 +93,31 @@ public class AppointmentService {
   public Payment pay(UUID appointmentId, BigDecimal amount, String method, String status) {
     validatePayment(method, status);
 
-    Appointment appointment = appointments.findById(appointmentId).orElseThrow();
+    Appointment appointment = appointments.findById(appointmentId)
+        .orElseThrow(() -> new IllegalArgumentException("Appointment not found"));
     if ("CANCELLED".equals(appointment.getStatus()) || "EXPIRED".equals(appointment.getStatus())) {
       throw new IllegalStateException("Cancelled or expired appointments cannot be paid");
     }
-    Invoice invoice = invoices.findByAppointmentId(appointmentId).orElseThrow();
-    Payment payment = payments.save(new Payment(invoice.getId(), amount, method, status));
+
+    BigDecimal payAmount = amount != null ? amount : BigDecimal.valueOf(3500);
+    Invoice invoice = invoices.findByAppointmentId(appointmentId)
+        .orElseGet(() -> invoices.save(new Invoice(appointment.getId(), payAmount)));
+
+    Payment payment = payments.save(new Payment(invoice.getId(), payAmount, method, status));
 
     if ("PAID".equals(status) || "PARTIALLY_PAID".equals(status)) {
-      AvailabilitySlot slot = slots.findForUpdate(appointment.getSlotId()).orElseThrow();
-      slot.book();
+      slots.findForUpdate(appointment.getSlotId()).ifPresent(slot -> {
+        if ("AVAILABLE".equals(slot.getStatus())) {
+          slot.hold();
+        }
+        if ("HELD".equals(slot.getStatus())) {
+          slot.book();
+        }
+      });
       appointment.confirm();
       invoice.setStatus(status);
+      invoices.save(invoice);
+      appointments.save(appointment);
     }
     return payment;
   }

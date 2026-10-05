@@ -13,6 +13,7 @@ import {
   Menu,
   MessageCircle,
   Mail,
+  Receipt,
   Search,
   Settings,
   ShieldCheck,
@@ -41,11 +42,13 @@ import {
   fetchDietPlans,
   fetchHealthChecks,
   fetchInvoices,
+  fetchAllFeedback,
   fetchMailAttempts,
   fetchMailStatus,
   fetchMessages,
   fetchNotifications,
   fetchPatientFeedback,
+  fetchPractitionerFeedback,
   fetchProgressLogs,
   fetchReportSummary,
   fetchUsers,
@@ -85,10 +88,11 @@ const DietProgressFeature = lazy(() => import("@nutricare/diet-progress").then((
 const MessagingRemindersFeature = lazy(() => import("@nutricare/messaging-reminders").then((module) => ({ default: module.MessagingRemindersFeature })));
 const FeedbackAnalyticsFeature = lazy(() => import("@nutricare/feedback-analytics").then((module) => ({ default: module.FeedbackAnalyticsFeature })));
 
-type Page = "overview" | "users" | "appointments" | "health" | "diet" | "messages" | "analytics" | "email";
+type Page = "overview" | "users" | "invoices" | "appointments" | "health" | "diet" | "messages" | "analytics" | "email";
 
 const nav = [
   { id: "overview" as Page, label: "Overview", icon: LayoutDashboard },
+  { id: "invoices" as Page, label: "Invoices & Billing", icon: Receipt },
   { id: "users" as Page, label: "Patients & access", icon: ShieldCheck },
   { id: "appointments" as Page, label: "Appointments", icon: CalendarDays },
   { id: "health" as Page, label: "Health checks", icon: ClipboardList },
@@ -111,15 +115,15 @@ const roleLabels: Record<Role, string> = {
 };
 
 const rolePages: Record<Role, Page[]> = {
-  DIETITIAN: ["overview", "appointments", "health", "diet", "messages", "analytics"],
-  DOCTOR: ["overview", "appointments", "health", "diet", "messages"],
-  RECEPTION_STAFF: ["overview", "appointments", "messages"],
+  DIETITIAN: ["overview", "invoices", "users", "appointments", "health", "diet", "messages", "analytics"],
+  DOCTOR: ["overview", "invoices", "users", "appointments", "health", "diet", "messages", "analytics"],
+  RECEPTION_STAFF: ["overview", "invoices", "users", "appointments", "messages"],
   SYSTEM_ADMIN: nav.map((item) => item.id),
-  OPERATIONS_MANAGER: ["overview", "appointments", "analytics"],
-  FINANCE_EXECUTIVE: ["overview", "appointments", "analytics"],
-  MEDICAL_CENTER_COORDINATOR: ["overview", "appointments", "health", "analytics"],
-  PATIENT_RELATIONS_OFFICER: ["overview", "messages", "analytics"],
-  PATIENT: ["overview", "appointments", "health", "diet", "messages", "analytics"],
+  OPERATIONS_MANAGER: ["overview", "invoices", "users", "appointments", "analytics"],
+  FINANCE_EXECUTIVE: ["overview", "invoices", "users", "appointments", "analytics"],
+  MEDICAL_CENTER_COORDINATOR: ["overview", "invoices", "users", "appointments", "health", "analytics"],
+  PATIENT_RELATIONS_OFFICER: ["overview", "invoices", "users", "messages", "analytics"],
+  PATIENT: ["overview", "invoices", "appointments", "health", "diet", "messages", "analytics"],
 };
 
 /* â”€â”€ Format today's date dynamically â”€â”€ */
@@ -388,6 +392,8 @@ export function App() {
   const postNotice = useCallback((details: { recipientId: string; type: string; channel: "IN_APP" | "EMAIL" | "SMS"; message: string; simulateFailure?: boolean }) => createDeliveryNotice(requireSession(), details), [requireSession]);
   const postFeedback = useCallback((details: { patientId: string; practitionerId: string; appointmentId: string; rating: number; comments?: string }) => submitFeedback(requireSession(), details), [requireSession]);
   const loadFeedback = useCallback((patientId: string) => fetchPatientFeedback(requireSession(), patientId), [requireSession]);
+  const loadPractitionerFeedback = useCallback((practitionerId: string) => fetchPractitionerFeedback(requireSession(), practitionerId), [requireSession]);
+  const loadAllFeedback = useCallback(() => fetchAllFeedback(requireSession()), [requireSession]);
   const editFeedback = useCallback((id: string, details: { rating: number; comments?: string }) => updateFeedback(requireSession(), id, details), [requireSession]);
   const removeFeedback = useCallback((id: string) => deleteFeedback(requireSession(), id), [requireSession]);
   const loadComplaints = useCallback(() => fetchComplaints(requireSession()), [requireSession]);
@@ -445,12 +451,13 @@ export function App() {
         <div className="content">
           <Suspense fallback={<section className="panel empty">Preparing your care workspaceâ€¦</section>}>
             {page === "overview" && <Overview go={setPage} role={role} userName={session.user.fullName} userId={session.user.id} loadAppointments={loadAppointments} loadPlans={loadPlans} loadProgress={loadProgress} loadChecks={loadChecks} />}
-            {page === "users" && <UserAccessFeature isAdmin={role === "SYSTEM_ADMIN"} onProvision={(details) => provisionStaff(session, details.fullName, details.email, details.role)} onLoadUsers={loadUsers} onToggleUser={toggleUser} onDeleteUser={removeUser} onLoadInvoices={loadInvoices} onCreateInvoice={saveInvoice} onUpdateInvoice={editInvoice} onDeleteInvoice={removeInvoice} onLoadAppointments={loadAppointments} />}
+            {page === "users" && <UserAccessFeature initialTab="users" isAdmin={role === "SYSTEM_ADMIN" || role === "FINANCE_EXECUTIVE" || role === "OPERATIONS_MANAGER" || role === "RECEPTION_STAFF" || role === "MEDICAL_CENTER_COORDINATOR"} onProvision={(details) => provisionStaff(session, details.fullName, details.email, details.role)} onLoadUsers={loadUsers} onToggleUser={toggleUser} onDeleteUser={removeUser} onLoadInvoices={loadInvoices} onCreateInvoice={saveInvoice} onUpdateInvoice={editInvoice} onDeleteInvoice={removeInvoice} onLoadAppointments={loadAppointments} />}
+            {page === "invoices" && <UserAccessFeature initialTab="invoices" isAdmin={role === "SYSTEM_ADMIN" || role === "FINANCE_EXECUTIVE" || role === "OPERATIONS_MANAGER" || role === "RECEPTION_STAFF" || role === "MEDICAL_CENTER_COORDINATOR"} onProvision={(details) => provisionStaff(session, details.fullName, details.email, details.role)} onLoadUsers={loadUsers} onToggleUser={toggleUser} onDeleteUser={removeUser} onLoadInvoices={loadInvoices} onCreateInvoice={saveInvoice} onUpdateInvoice={editInvoice} onDeleteInvoice={removeInvoice} onLoadAppointments={loadAppointments} />}
             {page === "appointments" && <AppointmentBillingFeature role={role} currentUserId={session.user.id} userName={session.user.fullName} loadAppointments={loadAppointments} loadSlots={loadSlots} loadPeople={loadPeople} createBooking={createBooking} createSlot={createSlot} updateSlot={updateSlot} deleteSlot={deleteSlot} cancelAppointment={cancelBooking} updateAppointment={editAppointment} payAppointment={payBooking} />}
             {page === "health" && <HealthCheckFeature patientOnly={role === "PATIENT"} userName={session.user.fullName} currentUserId={session.user.id} loadPeople={loadPeople} loadChecks={loadChecks} saveCheck={saveCheck} updateCheck={editCheck} deleteCheck={removeCheck} />}
             {page === "diet" && <DietProgressFeature canManagePlans={role === "DIETITIAN" || role === "DOCTOR"} currentUserId={session.user.id} loadPeople={loadPeople} loadPlans={loadPlans} loadProgress={loadProgress} savePlan={savePlan} updatePlan={editPlan} deletePlan={removePlan} />}
             {page === "messages" && <MessagingRemindersFeature patientOnly={role === "PATIENT"} currentUserId={session.user.id} userName={session.user.fullName} loadPeople={loadPeople} loadMessages={loadMessages} sendMessage={postMessage} updateMessage={editMessage} deleteMessage={removeMessage} loadNotices={loadNotices} createNotice={postNotice} />}
-            {page === "analytics" && <FeedbackAnalyticsFeature patientOnly={role === "PATIENT"} currentUserId={session.user.id} loadAppointments={loadAppointments} loadFeedback={loadFeedback} submitFeedback={postFeedback} updateFeedback={editFeedback} deleteFeedback={removeFeedback} loadComplaints={loadComplaints} loadReport={loadReport} />}
+            {page === "analytics" && <FeedbackAnalyticsFeature patientOnly={role === "PATIENT"} role={role} currentUserId={session.user.id} loadAppointments={loadAppointments} loadFeedback={loadFeedback} loadPractitionerFeedback={loadPractitionerFeedback} loadAllFeedback={loadAllFeedback} submitFeedback={postFeedback} updateFeedback={editFeedback} deleteFeedback={removeFeedback} loadComplaints={loadComplaints} loadReport={loadReport} />}
             {page === "email" && role === "SYSTEM_ADMIN" && <EmailTestFeature defaultEmail={session.user.email} loadStatus={loadMailStatus} loadAttempts={loadMailAttempts} sendTest={postMailTest} />}
           </Suspense>
         </div>

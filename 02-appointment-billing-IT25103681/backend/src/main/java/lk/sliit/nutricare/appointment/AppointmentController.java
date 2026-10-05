@@ -91,7 +91,7 @@ public class AppointmentController {
 
   @PostMapping("/appointments/{id}/payments")
   @PreAuthorize(
-      "hasAnyRole('PATIENT','RECEPTION_STAFF','FINANCE_EXECUTIVE','SYSTEM_ADMIN')")
+      "hasAnyRole('PATIENT','RECEPTION_STAFF','FINANCE_EXECUTIVE','SYSTEM_ADMIN','DOCTOR','DIETITIAN','MEDICAL_CENTER_COORDINATOR','OPERATIONS_MANAGER')")
   @ResponseStatus(HttpStatus.CREATED)
   Payment pay(
       Authentication authentication,

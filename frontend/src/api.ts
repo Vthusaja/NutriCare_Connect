@@ -463,6 +463,14 @@ export function fetchPatientFeedback(session: Session, patientId: string): Promi
   return authenticated(session, `/feedback/patient/${patientId}`);
 }
 
+export function fetchPractitionerFeedback(session: Session, practitionerId: string): Promise<FeedbackEntry[]> {
+  return authenticated(session, `/feedback/practitioner/${practitionerId}`);
+}
+
+export function fetchAllFeedback(session: Session): Promise<FeedbackEntry[]> {
+  return authenticated(session, "/feedback");
+}
+
 export function updateFeedback(session: Session, id: string, details: {
   rating: number; comments?: string;
 }): Promise<FeedbackResult> {

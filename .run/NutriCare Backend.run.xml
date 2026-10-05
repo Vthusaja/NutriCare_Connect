@@ -8,13 +8,13 @@
       <env name="DB_PASSWORD" value="root" />
       <env name="JWT_SECRET" value="academic-demo-secret-change-before-deployment" />
       <env name="GEMINI_MODEL" value="gemini-3.5-flash-lite" />
-      <env name="MAIL_LIVE_ENABLED" value="false" />
-      <env name="DEMO_NOTIFICATIONS" value="true" />
+      <env name="MAIL_LIVE_ENABLED" value="true" />
+      <env name="DEMO_NOTIFICATIONS" value="false" />
       <env name="MAIL_HOST" value="smtp.gmail.com" />
       <env name="MAIL_PORT" value="587" />
-      <env name="MAIL_USERNAME" value="" />
-      <env name="MAIL_PASSWORD" value="" />
-      <env name="MAIL_FROM" value="" />
+      <env name="MAIL_USERNAME" value="harshithayasiru34@gmail.com" />
+      <env name="MAIL_PASSWORD" value="tlgsocvpigktrfbz" />
+      <env name="MAIL_FROM" value="harshithayasiru34@gmail.com" />
     </envs>
     <method v="2">
       <option name="Make" enabled="true" />

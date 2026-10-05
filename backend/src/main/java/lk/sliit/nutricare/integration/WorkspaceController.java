@@ -35,7 +35,7 @@ public class WorkspaceController {
 
   @GetMapping("/people")
   @PreAuthorize(
-      "hasAnyRole('DIETITIAN','DOCTOR','RECEPTION_STAFF','SYSTEM_ADMIN','MEDICAL_CENTER_COORDINATOR','PATIENT')")
+      "hasAnyRole('DIETITIAN','DOCTOR','RECEPTION_STAFF','SYSTEM_ADMIN','MEDICAL_CENTER_COORDINATOR','PATIENT','FINANCE_EXECUTIVE','OPERATIONS_MANAGER')")
   public List<PersonView> people(Authentication authentication) {
     String role = roleOf(authentication);
     String sql =
@@ -46,8 +46,8 @@ public class WorkspaceController {
         """;
     Object[] parameters = new Object[0];
     if ("DOCTOR".equals(role) || "DIETITIAN".equals(role)) {
-      sql += " AND role = ?";
-      parameters = new Object[] {"PATIENT"};
+      sql += " AND role IN (?, ?, ?)";
+      parameters = new Object[] {"PATIENT", "DOCTOR", "DIETITIAN"};
     } else if ("RECEPTION_STAFF".equals(role)) {
       sql += " AND role IN (?, ?, ?)";
       parameters = new Object[] {"PATIENT", "DIETITIAN", "DOCTOR"};

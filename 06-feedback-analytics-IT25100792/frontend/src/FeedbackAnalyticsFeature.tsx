@@ -32,9 +32,12 @@ type ReportSummary = {
 
 export function FeedbackAnalyticsFeature({
   patientOnly = false,
+  role = "PATIENT",
   currentUserId,
   loadAppointments,
   loadFeedback,
+  loadPractitionerFeedback,
+  loadAllFeedback,
   submitFeedback,
   updateFeedback,
   deleteFeedback,
@@ -42,9 +45,12 @@ export function FeedbackAnalyticsFeature({
   loadReport,
 }: {
   patientOnly?: boolean;
+  role?: string;
   currentUserId: string;
   loadAppointments: () => Promise<Appointment[]>;
   loadFeedback: (patientId: string) => Promise<FeedbackEntry[]>;
+  loadPractitionerFeedback?: (practitionerId: string) => Promise<FeedbackEntry[]>;
+  loadAllFeedback?: () => Promise<FeedbackEntry[]>;
   submitFeedback: (details: {
     patientId: string; practitionerId: string; appointmentId: string; rating: number; comments?: string;
   }) => Promise<FeedbackResult>;
@@ -55,6 +61,7 @@ export function FeedbackAnalyticsFeature({
 }) {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [myFeedback, setMyFeedback] = useState<FeedbackEntry[]>([]);
+  const [receivedFeedback, setReceivedFeedback] = useState<FeedbackEntry[]>([]);
   const [appointmentId, setAppointmentId] = useState("");
   const [practitionerId, setPractitionerId] = useState("");
   const [rating, setRating] = useState(5);
@@ -80,10 +87,26 @@ export function FeedbackAnalyticsFeature({
   }, []);
 
   function refreshFeedback() {
-    if (!patientOnly) return Promise.resolve();
-    return loadFeedback(currentUserId)
-      .then(setMyFeedback)
-      .catch((reason) => setError(reason instanceof Error ? reason.message : "Feedback could not be loaded."));
+    if (patientOnly) {
+      return loadFeedback(currentUserId)
+        .then(setMyFeedback)
+        .catch((reason) => setError(reason instanceof Error ? reason.message : "Feedback could not be loaded."));
+    }
+    if ((role === "DOCTOR" || role === "DIETITIAN") && loadPractitionerFeedback) {
+      return loadPractitionerFeedback(currentUserId)
+        .then(setReceivedFeedback)
+        .catch((reason) => setError(reason instanceof Error ? reason.message : "Practitioner feedback could not be loaded."));
+    }
+    if (loadAllFeedback) {
+      return loadAllFeedback()
+        .then(setReceivedFeedback)
+        .catch(() => {
+          if (loadPractitionerFeedback) {
+            return loadPractitionerFeedback(currentUserId).then(setReceivedFeedback).catch(() => undefined);
+          }
+        });
+    }
+    return Promise.resolve();
   }
 
   useEffect(() => {
@@ -103,7 +126,7 @@ export function FeedbackAnalyticsFeature({
 
   useEffect(() => {
     refreshFeedback();
-  }, [currentUserId, loadFeedback, patientOnly]);
+  }, [currentUserId, loadFeedback, loadPractitionerFeedback, loadAllFeedback, patientOnly, role]);
 
   useEffect(() => {
     if (patientOnly) return;
@@ -525,6 +548,36 @@ export function FeedbackAnalyticsFeature({
             <span className="eyebrow">Patient-owned feedback</span>
             <h2>Ratings are submitted by patients</h2>
             <p>Patients add, edit and delete their own consultation feedback. Low scores still escalate to the complaints queue shown here.</p>
+          </div>
+        </section>
+
+        <section className="panel span-2" style={{ gridColumn: "1 / -1", marginTop: 16 }}>
+          <div className="panel-title">
+            <div>
+              <span className="eyebrow">Consultation Reviews</span>
+              <h2>{role === "DOCTOR" || role === "DIETITIAN" ? "Feedback received for your consultations" : "All patient feedback records"}</h2>
+            </div>
+            <Star size={20} />
+          </div>
+          <div className="list">
+            {receivedFeedback.length === 0 && (
+              <div className="list-item">
+                <span className="grow">
+                  <strong>No feedback entries recorded</strong>
+                  <small>When patients leave feedback for consultations, it will appear here for the relevant doctor and admin staff.</small>
+                </span>
+              </div>
+            )}
+            {receivedFeedback.map((entry) => (
+              <div className="list-item" key={entry.id}>
+                <span className="avatar">P</span>
+                <span className="grow">
+                  <strong>Patient {entry.patientId} · {entry.rating}/5 Stars</strong>
+                  <small>Practitioner: {entry.practitionerId} · {entry.comments || "No comments written"}</small>
+                </span>
+                <span className="status confirmed">{entry.createdAt ? new Date(entry.createdAt).toLocaleDateString() : "Recent"}</span>
+              </div>
+            ))}
           </div>
         </section>
       </div>

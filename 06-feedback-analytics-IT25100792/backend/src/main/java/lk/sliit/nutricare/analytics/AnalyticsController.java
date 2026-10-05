@@ -71,6 +71,20 @@ public class AnalyticsController {
     return feedback.findByPatientIdOrderByCreatedAtDesc(patientId);
   }
 
+  @GetMapping("/feedback/practitioner/{practitionerId}")
+  @PreAuthorize(
+      "hasAnyRole('SYSTEM_ADMIN','OPERATIONS_MANAGER','PATIENT_RELATIONS_OFFICER') or"
+          + " ((hasRole('DOCTOR') or hasRole('DIETITIAN')) and principal == #practitionerId.toString())")
+  List<Feedback> forPractitioner(@PathVariable String practitionerId) {
+    return feedback.findByPractitionerIdOrderByCreatedAtDesc(practitionerId);
+  }
+
+  @GetMapping("/feedback")
+  @PreAuthorize("hasAnyRole('SYSTEM_ADMIN','OPERATIONS_MANAGER','PATIENT_RELATIONS_OFFICER')")
+  List<Feedback> allFeedback() {
+    return feedback.findAllByOrderByCreatedAtDesc();
+  }
+
   @PutMapping("/feedback/{id}")
   @PreAuthorize("hasRole('PATIENT')")
   @Transactional

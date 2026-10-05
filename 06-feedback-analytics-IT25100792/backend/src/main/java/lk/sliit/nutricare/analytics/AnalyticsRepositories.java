@@ -7,6 +7,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 interface FeedbackRepository extends JpaRepository<Feedback, UUID> {
   List<Feedback> findByPatientIdOrderByCreatedAtDesc(String patientId);
+  List<Feedback> findByPractitionerIdOrderByCreatedAtDesc(String practitionerId);
+  List<Feedback> findAllByOrderByCreatedAtDesc();
 }
 
 interface ComplaintRepository extends JpaRepository<Complaint, UUID> {
